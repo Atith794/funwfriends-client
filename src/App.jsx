@@ -1,0 +1,2508 @@
+// V1
+// import { useEffect, useRef, useState } from "react";
+// import axios from "axios";
+// import { io } from "socket.io-client";
+// import "./App.css";
+// // import crypto from 'crypto';
+// import { v4 as uuidv4 } from 'uuid';
+
+// // const API_URL = import.meta.env.VITE_API_URL;
+// const API_URL = "";
+
+// function App() {
+//   const socketRef = useRef(null);
+
+//   const [userId, setUserId] = useState("user_1");
+//   const [name, setName] = useState("User 1");
+
+//   const [latitude, setLatitude] = useState(0);
+//   const [longitude, setLongitude] = useState(0);
+
+//   const [token, setToken] = useState("");
+//   const [connected, setConnected] = useState(false);
+//   const [currentRoomId, setCurrentRoomId] = useState("");
+
+//   const [messageText, setMessageText] = useState("");
+//   const [messages, setMessages] = useState([]);
+//   const [logs, setLogs] = useState([]);
+//   const lastSentLocationRef = useRef(null);
+//   const locationWatchIdRef = useRef(null);
+
+//   const LOCATION_UPDATE_INTERVAL_MS = 2000;
+//   const lastSentAtRef = useRef(0);
+//   const lastAcceptedLocationRef = useRef(null);
+
+//   // 
+//   const pendingLocationRef = useRef(null);
+//   const trailingLocationTimeoutRef = useRef(null);
+//   // 
+
+//   const MAX_ACCEPTABLE_ACCURACY_METERS = 100;
+//   const MAX_REASONABLE_SPEED_MPS = 5;
+//   const IS_LOCATION_OVERRIDE_TESTING = true;
+
+//   const MIN_LOCATION_CHANGE_METERS = 5; // send only if user moved at least 5 meters
+
+//   const [isLoggingIn, setIsLoggingIn] = useState(false);
+//   const [isLocationAllowed, setIsLocationAllowed] = useState(false);
+//   const [isWatchingLocation, setIsWatchingLocation] = useState(false);
+//   const [useMockLocation, setUseMockLocation] = useState(false);
+
+//   const LOCATION_OPTIONS = {
+//     enableHighAccuracy: true,
+//     timeout: 20000,
+//     maximumAge: 0,
+//   };
+
+//   const isLocationSpike = ({ latitude, longitude, accuracy }) => {
+//     const now = Date.now();
+
+//     if (typeof accuracy === "number" && accuracy > MAX_ACCEPTABLE_ACCURACY_METERS) {
+//       return {
+//         isSpike: true,
+//         reason: "Poor GPS accuracy",
+//         accuracy,
+//       };
+//     }
+
+//     const lastAcceptedLocation = lastAcceptedLocationRef.current;
+
+//     if (!lastAcceptedLocation) {
+//       return {
+//         isSpike: false,
+//         reason: "First accepted location",
+//       };
+//     }
+
+//     const distanceMoved = getDistanceInMeters(
+//       lastAcceptedLocation.latitude,
+//       lastAcceptedLocation.longitude,
+//       latitude,
+//       longitude
+//     );
+
+//     const timeDiffSeconds = (now - lastAcceptedLocation.timestamp) / 1000;
+
+//     if (timeDiffSeconds <= 0) {
+//       return {
+//         isSpike: true,
+//         reason: "Invalid time difference",
+//       };
+//     }
+
+//     const speedMps = distanceMoved / timeDiffSeconds;
+
+//     if (!IS_LOCATION_OVERRIDE_TESTING && speedMps > MAX_REASONABLE_SPEED_MPS) {
+//       return {
+//         isSpike: true,
+//         reason: "Unrealistic movement speed",
+//         distanceMoved: Number(distanceMoved.toFixed(2)),
+//         timeDiffSeconds: Number(timeDiffSeconds.toFixed(2)),
+//         speedMps: Number(speedMps.toFixed(2)),
+//       };
+//     }
+
+//     return {
+//       isSpike: false,
+//       reason: "Location looks valid",
+//       distanceMoved: Number(distanceMoved.toFixed(2)),
+//       speedMps: Number(speedMps.toFixed(2)),
+//     };
+//   };
+
+//   const flushPendingLocation = () => {
+//     const pendingLocation = pendingLocationRef.current;
+
+//     if (!pendingLocation) {
+//       return;
+//     }
+
+//     const lastSentLocation = lastSentLocationRef.current;
+
+//     if (lastSentLocation) {
+//       const distanceMoved = getDistanceInMeters(
+//         lastSentLocation.latitude,
+//         lastSentLocation.longitude,
+//         pendingLocation.latitude,
+//         pendingLocation.longitude
+//       );
+
+//       if (distanceMoved < MIN_LOCATION_CHANGE_METERS) {
+//         addLog("Pending location skipped", {
+//           reason: "User has not moved enough",
+//           distanceMoved: Number(distanceMoved.toFixed(2)),
+//           minRequiredMeters: MIN_LOCATION_CHANGE_METERS,
+//         });
+
+//         pendingLocationRef.current = null;
+//         return;
+//       }
+//     }
+
+//     const sent = sendLocationToServer(
+//       pendingLocation.latitude,
+//       pendingLocation.longitude,
+//       pendingLocation.accuracy,
+//       "auto trailing"
+//     );
+
+//     if (sent) {
+//       markLocationAsSent(pendingLocation);
+
+//       addLog("Pending location update sent", {
+//         latitude: pendingLocation.latitude,
+//         longitude: pendingLocation.longitude,
+//         accuracy: pendingLocation.accuracy,
+//       });
+
+//       pendingLocationRef.current = null;
+//     }
+//   };
+
+//   const scheduleTrailingLocationUpdate = () => {
+//     if (trailingLocationTimeoutRef.current !== null) {
+//       return;
+//     }
+
+//     const now = Date.now();
+//     const lastSentAt = lastSentAtRef.current;
+
+//     const remainingTime = Math.max(
+//       LOCATION_UPDATE_INTERVAL_MS - (now - lastSentAt),
+//       0
+//     );
+
+//     trailingLocationTimeoutRef.current = setTimeout(() => {
+//       trailingLocationTimeoutRef.current = null;
+//       flushPendingLocation();
+//     }, remainingTime);
+//   };
+
+//   function getDistanceInMeters(lat1, lon1, lat2, lon2) {
+//     const EARTH_RADIUS_METERS = 6371000;
+
+//     const toRadians = (degrees) => (degrees * Math.PI) / 180;
+
+//     const dLat = toRadians(lat2 - lat1);
+//     const dLon = toRadians(lon2 - lon1);
+
+//     const rLat1 = toRadians(lat1);
+//     const rLat2 = toRadians(lat2);
+
+//     const a =
+//       Math.sin(dLat / 2) ** 2 +
+//       Math.cos(rLat1) *
+//       Math.cos(rLat2) *
+//       Math.sin(dLon / 2) ** 2;
+
+//     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+//     return EARTH_RADIUS_METERS * c;
+//   }
+
+//   const markLocationAsSent = (location) => {
+//     lastSentLocationRef.current = {
+//       latitude: Number(location.latitude),
+//       longitude: Number(location.longitude),
+//     };
+
+//     lastSentAtRef.current = Date.now();
+//   };
+
+//   const sendLocationToServer = (lat, lng, accuracy = null, source = "manual") => {
+//     if (!socketRef.current || !socketRef.current.connected) {
+//       addLog("Location update skipped, Socket is not connected")
+//       return false;
+//     }
+
+//     socketRef.current.emit(
+//       "location:update",
+//       {
+//         latitude: Number(lat),
+//         longitude: Number(lng),
+//         accuracy: accuracy === null ? null : Number(accuracy),
+//         sentAt: Date.now(),
+//       },
+//       (ack) => {
+//         addLog(`${source} location update ack`, ack)
+//       }
+//     )
+
+//     return true;
+//   }
+
+//   const addLog = (msg, data = null) => {
+//     setLogs((prev) => [
+//       {
+//         time: new Date().toLocaleTimeString(),
+//         msg,
+//         data,
+//       },
+//       ...prev,
+//     ]);
+//   };
+
+//   const getGeoErrorMessage = (error) => {
+//     if (!error) return "Unable to get location";
+
+//     switch (error.code) {
+//       case error.PERMISSION_DENIED:
+//         return "Location permission denied. Please allow location access to continue.";
+//       case error.POSITION_UNAVAILABLE:
+//         return "Location information is unavailable.";
+//       case error.TIMEOUT:
+//         return "Location request timed out. Please try again.";
+//       default:
+//         return "Unable to get location.";
+//     }
+//   };
+
+//   const getCurrentLocation = () => {
+//     return new Promise((resolve, reject) => {
+//       if (!navigator.geolocation) {
+//         reject(new Error("Geolocation is not supported by this browser."));
+//         return;
+//       }
+
+//       navigator.geolocation.getCurrentPosition(
+//         (position) => {
+//           console.log("Current position:", position.coords)
+//           resolve({
+//             latitude: position.coords.latitude,
+//             longitude: position.coords.longitude,
+//             accuracy: position.coords.accuracy,
+//           });
+//         },
+//         (error) => {
+//           console.error("Error in get location:", error);
+//           reject(error);
+//         },
+//         // {
+//         //   timeout: 10000,
+//         //   maximumAge: 0,
+//         // }
+//         LOCATION_OPTIONS
+//       );
+//     });
+//   };
+
+//   const login = async () => {
+//     setIsLoggingIn(true);
+
+//     let location;
+
+//     try {
+//       location = await getCurrentLocation();
+
+//       setLatitude(location.latitude);
+//       setLongitude(location.longitude);
+//       setIsLocationAllowed(true);
+
+//       addLog("Location permission allowed", location);
+//     } catch (error) {
+//       setIsLocationAllowed(false);
+//       setToken("");
+
+//       const message = getGeoErrorMessage(error);
+
+//       addLog("Location permission failed", message);
+//       alert(message);
+
+//       setIsLoggingIn(false);
+//       return;
+//     }
+
+//     try {
+//       // const res = await axios.post(`${API_URL}/auth/login`, {
+//       const res = await axios.post(`/api/auth/login`, {
+//         userId,
+//         name,
+//         latitude: Number(location.latitude),
+//         longitude: Number(location.longitude),
+//       });
+
+//       setToken(res.data.token);
+//       addLog("Login successful", res.data);
+//     } catch (error) {
+//       addLog("Login failed", error.response?.data || error.message);
+//     } finally {
+//       setIsLoggingIn(false);
+//     }
+//   };
+
+//   const connectSocket = () => {
+//     // if (!token) {
+//     //   alert("Please login first");
+//     //   return;
+//     // }
+
+//     if (socketRef.current) {
+//       socketRef.current.disconnect();
+//     }
+
+//     // const socket = io(API_URL, {
+//     const socket = io(window.location.origin, {
+//       auth: {
+//         token,
+//       },
+//     });
+
+//     socketRef.current = socket;
+
+//     socket.on("connect", () => {
+//       setConnected(true);
+//       addLog("Socket connected", socket.id);
+
+//       startLocationWatcher(socket);
+//     });
+
+//     socket.on("disconnect", () => {
+//       setConnected(false);
+//       setCurrentRoomId("");
+//       stopLocationWatcher();
+//       addLog("Socket disconnected");
+//     });
+
+//     socket.on("connect_error", (error) => {
+//       addLog("Socket connection error", error.message);
+//     });
+
+//     socket.on("waiting:joined", (data) => {
+//       addLog("Joined waiting room", data);
+//     });
+
+//     socket.on("chat:matched", (data) => {
+//       setCurrentRoomId(data.roomId);
+//       setMessages([]);
+//       addLog("Matched with nearby user", data);
+//     });
+
+//     /**
+//      * These events are from your current uploaded server structure.
+//      */
+//     socket.on("rooms:available", (data) => {
+//       addLog("Available rooms received", data);
+//     });
+
+//     socket.on("room:joined", (data) => {
+//       setCurrentRoomId(data.roomId);
+//       addLog("Room joined", data);
+//     });
+
+//     socket.on("room:rejoined", (data) => {
+//       setCurrentRoomId(data.roomId);
+//       addLog("Room rejoined", data);
+//     });
+
+//     socket.on("room:removed", (data) => {
+//       setCurrentRoomId("");
+//       setMessages([]);
+//       addLog("Removed from room", data);
+//     });
+
+//     socket.on("room:user_left", (data) => {
+//       addLog("User left room", data);
+//     });
+
+//     socket.on("room:members_updated", (data) => {
+//       addLog("Room members updated", data);
+//     });
+
+//     socket.on("room:user_location_updated", (data) => {
+//       addLog("Room user location updated", data);
+//     });
+
+//     /**
+//      * Auto-match backend chat events.
+//      */
+//     socket.on("message:new", (message) => {
+//       setMessages((prev) => [...prev, message]);
+//       addLog("New message received", message);
+//     });
+
+//     socket.on("chat:ended", (data) => {
+//       setCurrentRoomId("");
+//       setMessages([]);
+//       addLog("Chat ended", data);
+//     });
+
+//     socket.on("location:updated", (data) => {
+//       addLog("Location updated event", data);
+//     });
+
+//     socket.on("auth:error", (data) => {
+//       addLog("Auth error", data);
+//     });
+//   };
+
+//   const stopLocationWatcher = () => {
+//     if (locationWatchIdRef.current !== null) {
+//       navigator.geolocation.clearWatch(locationWatchIdRef.current);
+//       locationWatchIdRef.current = null;
+//     }
+
+//     if (trailingLocationTimeoutRef.current !== null) {
+//       clearTimeout(trailingLocationTimeoutRef.current);
+//       trailingLocationTimeoutRef.current = null;
+//     }
+
+//     lastSentLocationRef.current = null;
+//     lastSentAtRef.current = 0;
+//     lastAcceptedLocationRef.current = null;
+//     pendingLocationRef.current = null;
+
+//     setIsWatchingLocation(false);
+//   };
+
+//   const startLocationWatcher = (socket) => {
+//     if (useMockLocation) {
+//       addLog("Location watcher skipped", "Mock location mode is enabled");
+//       return;
+//     }
+
+//     if (!navigator.geolocation) {
+//       addLog("Location watch failed", "Geolocation is not supported.");
+//       return;
+//     }
+
+//     stopLocationWatcher();
+
+//     const watchId = navigator.geolocation.watchPosition(
+//       (position) => {
+//         const newLatitude = position.coords.latitude;
+//         const newLongitude = position.coords.longitude;
+//         const accuracy = position.coords.accuracy;
+
+//         setLatitude(newLatitude);
+//         setLongitude(newLongitude);
+//         setIsLocationAllowed(true);
+
+//         addLog("Browser location changed", {
+//           latitude: newLatitude,
+//           longitude: newLongitude,
+//           accuracy,
+//         });
+
+//         const locationCheck = isLocationSpike({
+//           latitude: newLatitude,
+//           longitude: newLongitude,
+//           accuracy,
+//         });
+
+//         if (locationCheck.isSpike) {
+//           addLog("Location spike rejected", locationCheck);
+//           return;
+//         }
+
+//         const acceptedLocation = {
+//           latitude: newLatitude,
+//           longitude: newLongitude,
+//           accuracy,
+//           timestamp: Date.now(),
+//         };
+
+//         lastAcceptedLocationRef.current = acceptedLocation;
+
+//         const now = Date.now();
+//         const lastSentLocation = lastSentLocationRef.current;
+//         const lastSentAt = lastSentAtRef.current;
+
+//         if (!lastSentLocation) {
+//           const sent = sendLocationToServer(
+//             acceptedLocation.latitude,
+//             acceptedLocation.longitude,
+//             acceptedLocation.accuracy,
+//             "auto first"
+//           );
+
+//           if (sent) {
+//             markLocationAsSent(acceptedLocation);
+//           }
+
+//           return;
+//         }
+
+//         const distanceMoved = getDistanceInMeters(
+//           lastSentLocation.latitude,
+//           lastSentLocation.longitude,
+//           acceptedLocation.latitude,
+//           acceptedLocation.longitude
+//         );
+
+//         if (distanceMoved < MIN_LOCATION_CHANGE_METERS) {
+//           addLog("Location update skipped", {
+//             reason: "User has not moved enough",
+//             distanceMoved: Number(distanceMoved.toFixed(2)),
+//             minRequiredMeters: MIN_LOCATION_CHANGE_METERS,
+//           });
+
+//           return;
+//         }
+
+//         const timePassed = now - lastSentAt >= LOCATION_UPDATE_INTERVAL_MS;
+
+//         if (!timePassed) {
+//           pendingLocationRef.current = acceptedLocation;
+
+//           addLog("Location update delayed", {
+//             reason: "Throttle active",
+//             distanceMoved: Number(distanceMoved.toFixed(2)),
+//             intervalMs: LOCATION_UPDATE_INTERVAL_MS,
+//           });
+
+//           scheduleTrailingLocationUpdate();
+//           return;
+//         }
+
+//         const sent = sendLocationToServer(
+//           acceptedLocation.latitude,
+//           acceptedLocation.longitude,
+//           acceptedLocation.accuracy,
+//           "auto throttled"
+//         );
+
+//         if (sent) {
+//           markLocationAsSent(acceptedLocation);
+
+//           addLog("Location update sent", {
+//             distanceMoved: Number(distanceMoved.toFixed(2)),
+//             accuracy,
+//           });
+//         }
+//       },
+//       (error) => {
+//         const message = getGeoErrorMessage(error);
+
+//         addLog("Location watch error", message);
+
+//         if (error.code === error.PERMISSION_DENIED) {
+//           setIsLocationAllowed(false);
+//           stopLocationWatcher();
+
+//           socket?.disconnect();
+
+//           alert("Location permission is required. You have been disconnected.");
+//         }
+//       },
+//       LOCATION_OPTIONS
+//     );
+
+//     locationWatchIdRef.current = watchId;
+//     setIsWatchingLocation(true);
+
+//     addLog("Started dynamic location tracking", {
+//       mode: "watchPosition + spike rejection + trailing throttle",
+//       intervalMs: LOCATION_UPDATE_INTERVAL_MS,
+//       minDistanceMeters: MIN_LOCATION_CHANGE_METERS,
+//     });
+//   };
+
+//   const moveNearby = () => {
+//     const lat = 12.97165;
+//     const lng = 77.59465;
+
+//     setUseMockLocation(true);
+//     stopLocationWatcher();
+
+//     setLatitude(lat);
+//     setLongitude(lng);
+
+//     const location = {
+//       latitude: lat,
+//       longitude: lng,
+//       accuracy: null
+//     }
+
+//     // sendLocationToServer(lat, lng, "mock nearby");
+//     const sent = sendLocationToServer(location.latitude, location.longitude, location.accuracy, "mock nearby");
+
+//     if (sent) {
+//       markLocationAsSent(lat, lng);
+//     }
+//   };
+
+//   // const moveFarAway = () => {
+//   //   const lat = 12.975;
+//   //   const lng = 77.6;
+
+//   //   setUseMockLocation(true);
+//   //   stopLocationWatcher();
+
+//   //   setLatitude(lat);
+//   //   setLongitude(lng);
+
+//   //   // sendLocationToServer(lat, lng, "mock far away");
+//   //   const sent = sendLocationToServer(lat, lng, "mock nearby");
+
+//   //   if (sent) {
+//   //     markLocationAsSent(lat, lng);
+//   //   }
+//   // };
+
+//   const moveFarAway = () => {
+//     const lat = 12.975;
+//     const lng = 77.6;
+
+//     setUseMockLocation(true);
+//     stopLocationWatcher();
+
+//     setLatitude(lat);
+//     setLongitude(lng);
+
+//     const location = {
+//       latitude: lat,
+//       longitude: lng,
+//       accuracy: null,
+//     };
+
+//     const sent = sendLocationToServer(
+//       location.latitude,
+//       location.longitude,
+//       location.accuracy,
+//       "mock far away"
+//     );
+
+//     if (sent) {
+//       markLocationAsSent(location);
+//     }
+//   };
+
+//   const sendMessage = () => {
+//     if (!socketRef.current) {
+//       alert("Socket not connected");
+//       return;
+//     }
+
+//     if (!messageText.trim()) {
+//       return;
+//     }
+
+//     socketRef.current.emit(
+//       "message:send",
+//       {
+//         text: messageText,
+//         // clientMessageId: crypto.randomUUID(),
+//         clientMessageId: uuidv4(),
+//       },
+//       (ack) => {
+//         addLog("Message send ack", ack);
+//       }
+//     );
+
+//     setMessageText("");
+//   };
+
+//   const leaveRoom = () => {
+//     if (!socketRef.current) {
+//       return;
+//     }
+
+//     socketRef.current.emit("room:leave", {}, (ack) => {
+//       addLog("Leave room ack", ack);
+//     });
+
+//     stopLocationWatcher();
+
+//     socketRef.current?.disconnect();
+//     socketRef.current = null;
+
+//     setConnected(false);
+//     setCurrentRoomId("");
+//   };
+
+//   // const disconnectSocket = () => {
+//   //   socketRef.current?.disconnect();
+//   //   socketRef.current = null;
+//   // };
+
+//   const disconnectSocket = () => {
+//     stopLocationWatcher();
+
+//     socketRef.current?.disconnect();
+//     socketRef.current = null;
+
+//     setConnected(false);
+//     setCurrentRoomId("");
+//   };
+
+//   useEffect(() => {
+//     return () => {
+//       stopLocationWatcher();
+//       socketRef.current?.disconnect();
+//     };
+//   }, []);
+
+//   return (
+//     <div className="page">
+//       <h1>Fun with Friends</h1>
+
+//       <div className="status">
+//         <span>User: {userId}</span>
+//         <span>Socket: {connected ? "Connected" : "Disconnected"}</span>
+//         <span>Room: {currentRoomId || "No room"}</span>
+//         <span>Location: {isLocationAllowed ? "Allowed" : "Not Allowed"}</span>
+//         <span>Tracking: {isWatchingLocation ? "Active" : "Stopped"}</span>
+//       </div>
+
+//       <div className="card">
+//         <h2>1. Login</h2>
+
+//         <label>User ID</label>
+//         <input value={userId} onChange={(e) => setUserId(e.target.value)} />
+
+//         <label>Name</label>
+//         <input value={name} onChange={(e) => setName(e.target.value)} />
+
+//         <label>Latitude</label>
+//         {/* <input
+//           type="number"
+//           value={latitude}
+//           onChange={(e) => setLatitude(e.target.value)}
+//         /> */}
+//         <p>{latitude === 0 ? '-' : latitude}</p>
+
+//         <label>Longitude</label>
+//         {/* <input
+//           type="number"
+//           value={longitude}
+//           onChange={(e) => setLongitude(e.target.value)}
+//         /> */}
+//         <p>{longitude === 0 ? '-' : longitude}</p>
+
+//         <div className="buttons">
+//           <button onClick={login} disabled={isLoggingIn}>
+//             {isLoggingIn ? "Requesting Location..." : "Login"}
+//           </button>
+
+//           <button onClick={connectSocket} disabled={!token}>
+//             Connect Socket
+//           </button>
+
+//           <button onClick={disconnectSocket}>
+//             Disconnect
+//           </button>
+//         </div>
+//       </div>
+
+//       <div className="card">
+//         <h2>2. Location details</h2>
+
+//         {/* <p>
+//           Open this same frontend in another browser tab and login as{" "}
+//           <b>user_2</b>. Keep both users near each other to test matching.
+//         </p>
+
+//         <div className="buttons">
+//           <button onClick={moveNearby}>Set Nearby Location</button>
+//           <button onClick={moveFarAway}>Set Far Away Location</button>
+//           <button onClick={updateLocation}>Send Location Update</button>
+//         </div> */}
+
+//         <p>
+//           Current location: {latitude}, {longitude}
+//         </p>
+//       </div>
+
+//       <div className="card">
+//         <h2>3. Chat</h2>
+
+//         <div className="chatBox">
+//           {messages.length === 0 ? (
+//             <p>No messages yet</p>
+//           ) : (
+//             messages.map((msg, index) => (
+//               <div key={index} className="message">
+//                 <b>{msg.from}</b>: {msg.text}
+//               </div>
+//             ))
+//           )}
+//         </div>
+
+//         <div className="sendBox">
+//           <input
+//             placeholder="Type message"
+//             value={messageText}
+//             onChange={(e) => setMessageText(e.target.value)}
+//             onKeyDown={(e) => {
+//               if (e.key === "Enter") {
+//                 sendMessage();
+//               }
+//             }}
+//           />
+
+//           <button onClick={sendMessage}>Send</button>
+//         </div>
+
+//         <button className="danger" onClick={leaveRoom}>
+//           Leave Room
+//         </button>
+//       </div>
+
+//       <div className="card">
+//         <h2>Logs</h2>
+
+//         <div className="logs">
+//           {logs.map((log, index) => (
+//             <div key={index} className="log">
+//               <b>{log.time}</b> - {log.msg}
+//               {log.data && (
+//                 <pre>{JSON.stringify(log.data, null, 2)}</pre>
+//               )}
+//             </div>
+//           ))}
+//         </div>
+//       </div>
+//     </div>
+//   );
+// }
+
+// export default App;
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import axios from "axios";
+import { io } from "socket.io-client";
+import { v4 as uuidv4 } from "uuid";
+import "./App.css";
+import { Send, ImagePlus, Plus, Minus, X, PlusCircle, MinusCircle, Search } from 'lucide-react';
+
+const API_URL = "";
+
+const GUEST_NAMES = [
+  "Happy Panda",
+  "Sunny Fox",
+  "Cool Tiger",
+  "Jolly Bear",
+  "Magic Bunny",
+  "Lucky Duck",
+  "Smiley Koala",
+  "Friendly Wolf",
+];
+
+function App() {
+  const socketRef = useRef(null);
+
+  const [activeScreen, setActiveScreen] = useState("home");
+
+  const [userId, setUserId] = useState("");
+  const [name, setName] = useState("");
+
+  const [latitude, setLatitude] = useState(0);
+  const [longitude, setLongitude] = useState(0);
+
+  const [token, setToken] = useState("");
+  const [connected, setConnected] = useState(false);
+  const [currentRoomId, setCurrentRoomId] = useState("");
+
+  const [messageText, setMessageText] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [isImageUploading, setIsImageUploading] = useState(false);
+
+  const lastSentLocationRef = useRef(null);
+  const locationWatchIdRef = useRef(null);
+  const lastSentAtRef = useRef(0);
+  const lastAcceptedLocationRef = useRef(null);
+  const pendingLocationRef = useRef(null);
+  const trailingLocationTimeoutRef = useRef(null);
+
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isLocationAllowed, setIsLocationAllowed] = useState(false);
+  const [isWatchingLocation, setIsWatchingLocation] = useState(false);
+  const [useMockLocation] = useState(false);
+  const [locationPermissionNotice, setLocationPermissionNotice] = useState(null);
+
+  useEffect(() => {
+    if (!navigator.permissions?.query) return;
+
+    let permissionStatus;
+
+    navigator.permissions
+      .query({ name: "geolocation" })
+      .then((status) => {
+        permissionStatus = status;
+
+        const syncLocationPermission = () => {
+          if (status.state === "denied") {
+            setIsLocationAllowed(false);
+            setLocationPermissionNotice({
+              title: "Location permission is blocked",
+              message:
+                "Your browser is currently blocking location access for this site.",
+              steps:
+                // <p>To enable it: Click the locked map pin/site or
+                <p>To enable it: Click the locked map pin/site{' '}
+                  {/* <MapPinOff className="inline-block h-4 w-4 align-text-bottom mx-1"/>{' '} */}
+                  settings icon near the browser address bar → Location → Allow → refresh or click Try again.
+                </p>
+            });
+          }
+
+          if (status.state === "granted") {
+            setLocationPermissionNotice(null);
+          }
+        };
+
+        syncLocationPermission();
+
+        status.onchange = syncLocationPermission;
+      })
+      .catch(() => { });
+
+    return () => {
+      if (permissionStatus) {
+        permissionStatus.onchange = null;
+      }
+    };
+  }, []);
+
+  const resetLocalSession = () => {
+    stopLocationWatcher();
+
+    socketRef.current = null;
+
+    setConnected(false);
+    setCurrentRoomId("");
+    setMessages([]);
+    setMessageText("");
+    setToken("");
+    setUserId("");
+    setName("");
+    setLatitude(0);
+    setLongitude(0);
+    setIsLocationAllowed(false);
+    setIsWatchingLocation(false);
+    setActiveScreen("home");
+  };
+
+  const sendImageMessage = async (file) => {
+    if (!file) return;
+
+    if (!currentRoomId) {
+      alert("You are not connected to a nearby friend yet.");
+      return;
+    }
+
+    if (!token) {
+      alert("Login token missing. Please reconnect.");
+      return;
+    }
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+
+    if (!allowedTypes.includes(file.type)) {
+      alert("Only JPG, PNG, WEBP and GIF images are allowed.");
+      return;
+    }
+
+    const maxSizeInBytes = 3 * 1024 * 1024;
+
+    if (file.size > maxSizeInBytes) {
+      alert("Image size should be less than 3 MB.");
+      return;
+    }
+
+    try {
+      setIsImageUploading(true);
+
+      const formData = new FormData();
+      formData.append("image", file);
+      formData.append("clientMessageId", uuidv4());
+
+      const res = await axios.post(`${API_URL}/api/messages/image`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      addLog("Image message sent", res.data);
+    } catch (error) {
+      addLog("Image message failed", error.response?.data || error.message);
+      alert(error.response?.data?.message || "Failed to send image.");
+      console.log("Error in uploading image:", error)
+    } finally {
+      setIsImageUploading(false);
+    }
+  };
+
+  const logout = () => {
+    const socket = socketRef.current;
+
+    const finishLogout = () => {
+      socket?.disconnect();
+      resetLocalSession();
+      addLog("Logged out");
+    };
+
+    if (!socket || !socket.connected) {
+      finishLogout();
+      return;
+    }
+
+    let completed = false;
+
+    const safeFinish = () => {
+      if (completed) return;
+      completed = true;
+      finishLogout();
+    };
+
+    socket.emit(
+      "room:leave",
+      {
+        reason: "logout",
+      },
+      (ack) => {
+        addLog("Logout room leave ack", ack);
+        safeFinish();
+      }
+    );
+
+    // Fallback in case the server does not send ACK.
+    setTimeout(safeFinish, 1200);
+  };
+
+  const LOCATION_UPDATE_INTERVAL_MS = 2000;
+  const MAX_ACCEPTABLE_ACCURACY_METERS = 100;
+  const MAX_REASONABLE_SPEED_MPS = 5;
+  const IS_LOCATION_OVERRIDE_TESTING = true;
+  const MIN_LOCATION_CHANGE_METERS = 5;
+
+  const LOCATION_OPTIONS = {
+    enableHighAccuracy: true,
+    timeout: 20000,
+    maximumAge: 0,
+  };
+
+  const displayName = name || "Guest Friend";
+
+  const connectionLabel = useMemo(() => {
+    if (!connected) return "Not connected";
+    if (currentRoomId) return "Connected nearby";
+    return "Searching nearby";
+  }, [connected, currentRoomId]);
+
+  const generateGuestUser = () => {
+    const randomName =
+      GUEST_NAMES[Math.floor(Math.random() * GUEST_NAMES.length)];
+
+    const shortId = uuidv4().slice(0, 8);
+
+    return {
+      userId: `guest_${shortId}`,
+      name: `${randomName} ${shortId.slice(0, 3)}`,
+    };
+  };
+
+  const addLog = (msg, data = null) => {
+    setLogs((prev) => [
+      {
+        time: new Date().toLocaleTimeString(),
+        msg,
+        data,
+      },
+      ...prev,
+    ]);
+  };
+
+  function getDistanceInMeters(lat1, lon1, lat2, lon2) {
+    const EARTH_RADIUS_METERS = 6371000;
+    const toRadians = (degrees) => (degrees * Math.PI) / 180;
+
+    const dLat = toRadians(lat2 - lat1);
+    const dLon = toRadians(lon2 - lon1);
+
+    const rLat1 = toRadians(lat1);
+    const rLat2 = toRadians(lat2);
+
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(rLat1) *
+      Math.cos(rLat2) *
+      Math.sin(dLon / 2) ** 2;
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return EARTH_RADIUS_METERS * c;
+  }
+
+  const getGeoErrorMessage = (error) => {
+    if (!error) return "Unable to get location.";
+
+    switch (error.code) {
+      case error.PERMISSION_DENIED:
+        return "Location permission denied. Please allow location access to continue.";
+      case error.POSITION_UNAVAILABLE:
+        return "Location information is unavailable.";
+      case error.TIMEOUT:
+        return "Location request timed out. Please try again.";
+      default:
+        return "Unable to get location.";
+    }
+  };
+
+  const showLocationPermissionNotice = (error) => {
+    const message = getGeoErrorMessage(error);
+
+    setLocationPermissionNotice({
+      title: "Location permission is required",
+      message,
+      steps:
+        "To enable it: Click the locked map pin/ site settings icon near the browser address bar → Location → Allow → refresh or click Try again.",
+    });
+  };
+
+  const getCurrentLocation = () => {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error("Geolocation is not supported by this browser."));
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+          });
+        },
+        (error) => {
+          reject(error);
+        },
+        LOCATION_OPTIONS
+      );
+    });
+  };
+
+  const isLocationSpike = ({ latitude, longitude, accuracy }) => {
+    const now = Date.now();
+
+    if (
+      typeof accuracy === "number" &&
+      accuracy > MAX_ACCEPTABLE_ACCURACY_METERS
+    ) {
+      return {
+        isSpike: true,
+        reason: "Poor GPS accuracy",
+        accuracy,
+      };
+    }
+
+    const lastAcceptedLocation = lastAcceptedLocationRef.current;
+
+    if (!lastAcceptedLocation) {
+      return {
+        isSpike: false,
+        reason: "First accepted location",
+      };
+    }
+
+    const distanceMoved = getDistanceInMeters(
+      lastAcceptedLocation.latitude,
+      lastAcceptedLocation.longitude,
+      latitude,
+      longitude
+    );
+
+    const timeDiffSeconds = (now - lastAcceptedLocation.timestamp) / 1000;
+
+    if (timeDiffSeconds <= 0) {
+      return {
+        isSpike: true,
+        reason: "Invalid time difference",
+      };
+    }
+
+    const speedMps = distanceMoved / timeDiffSeconds;
+
+    if (!IS_LOCATION_OVERRIDE_TESTING && speedMps > MAX_REASONABLE_SPEED_MPS) {
+      return {
+        isSpike: true,
+        reason: "Unrealistic movement speed",
+        distanceMoved: Number(distanceMoved.toFixed(2)),
+        timeDiffSeconds: Number(timeDiffSeconds.toFixed(2)),
+        speedMps: Number(speedMps.toFixed(2)),
+      };
+    }
+
+    return {
+      isSpike: false,
+      reason: "Location looks valid",
+      distanceMoved: Number(distanceMoved.toFixed(2)),
+      speedMps: Number(speedMps.toFixed(2)),
+    };
+  };
+
+  const markLocationAsSent = (location) => {
+    lastSentLocationRef.current = {
+      latitude: Number(location.latitude),
+      longitude: Number(location.longitude),
+    };
+
+    lastSentAtRef.current = Date.now();
+  };
+
+  const sendLocationToServer = (
+    lat,
+    lng,
+    accuracy = null,
+    source = "manual"
+  ) => {
+    if (!socketRef.current || !socketRef.current.connected) {
+      addLog("Location update skipped, socket is not connected");
+      return false;
+    }
+
+    socketRef.current.emit(
+      "location:update",
+      {
+        latitude: Number(lat),
+        longitude: Number(lng),
+        accuracy: accuracy === null ? null : Number(accuracy),
+        sentAt: Date.now(),
+      },
+      (ack) => {
+        addLog(`${source} location update ack`, ack);
+      }
+    );
+
+    return true;
+  };
+
+  const flushPendingLocation = () => {
+    const pendingLocation = pendingLocationRef.current;
+
+    if (!pendingLocation) return;
+
+    const lastSentLocation = lastSentLocationRef.current;
+
+    if (lastSentLocation) {
+      const distanceMoved = getDistanceInMeters(
+        lastSentLocation.latitude,
+        lastSentLocation.longitude,
+        pendingLocation.latitude,
+        pendingLocation.longitude
+      );
+
+      if (distanceMoved < MIN_LOCATION_CHANGE_METERS) {
+        addLog("Pending location skipped", {
+          reason: "User has not moved enough",
+          distanceMoved: Number(distanceMoved.toFixed(2)),
+          minRequiredMeters: MIN_LOCATION_CHANGE_METERS,
+        });
+
+        pendingLocationRef.current = null;
+        return;
+      }
+    }
+
+    const sent = sendLocationToServer(
+      pendingLocation.latitude,
+      pendingLocation.longitude,
+      pendingLocation.accuracy,
+      "auto trailing"
+    );
+
+    if (sent) {
+      markLocationAsSent(pendingLocation);
+      pendingLocationRef.current = null;
+    }
+  };
+
+  const scheduleTrailingLocationUpdate = () => {
+    if (trailingLocationTimeoutRef.current !== null) return;
+
+    const now = Date.now();
+    const lastSentAt = lastSentAtRef.current;
+
+    const remainingTime = Math.max(
+      LOCATION_UPDATE_INTERVAL_MS - (now - lastSentAt),
+      0
+    );
+
+    trailingLocationTimeoutRef.current = setTimeout(() => {
+      trailingLocationTimeoutRef.current = null;
+      flushPendingLocation();
+    }, remainingTime);
+  };
+
+  const stopLocationWatcher = () => {
+    if (locationWatchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(locationWatchIdRef.current);
+      locationWatchIdRef.current = null;
+    }
+
+    if (trailingLocationTimeoutRef.current !== null) {
+      clearTimeout(trailingLocationTimeoutRef.current);
+      trailingLocationTimeoutRef.current = null;
+    }
+
+    lastSentLocationRef.current = null;
+    lastSentAtRef.current = 0;
+    lastAcceptedLocationRef.current = null;
+    pendingLocationRef.current = null;
+
+    setIsWatchingLocation(false);
+  };
+
+  const startLocationWatcher = (socket) => {
+    if (useMockLocation) {
+      addLog("Location watcher skipped", "Mock location mode is enabled");
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      addLog("Location watch failed", "Geolocation is not supported.");
+      return;
+    }
+
+    stopLocationWatcher();
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const newLatitude = position.coords.latitude;
+        const newLongitude = position.coords.longitude;
+        const accuracy = position.coords.accuracy;
+
+        setLatitude(newLatitude);
+        setLongitude(newLongitude);
+        setIsLocationAllowed(true);
+
+        const locationCheck = isLocationSpike({
+          latitude: newLatitude,
+          longitude: newLongitude,
+          accuracy,
+        });
+
+        if (locationCheck.isSpike) {
+          addLog("Location spike rejected", locationCheck);
+          return;
+        }
+
+        const acceptedLocation = {
+          latitude: newLatitude,
+          longitude: newLongitude,
+          accuracy,
+          timestamp: Date.now(),
+        };
+
+        lastAcceptedLocationRef.current = acceptedLocation;
+
+        const now = Date.now();
+        const lastSentLocation = lastSentLocationRef.current;
+        const lastSentAt = lastSentAtRef.current;
+
+        if (!lastSentLocation) {
+          const sent = sendLocationToServer(
+            acceptedLocation.latitude,
+            acceptedLocation.longitude,
+            acceptedLocation.accuracy,
+            "auto first"
+          );
+
+          if (sent) {
+            markLocationAsSent(acceptedLocation);
+          }
+
+          return;
+        }
+
+        const distanceMoved = getDistanceInMeters(
+          lastSentLocation.latitude,
+          lastSentLocation.longitude,
+          acceptedLocation.latitude,
+          acceptedLocation.longitude
+        );
+
+        if (distanceMoved < MIN_LOCATION_CHANGE_METERS) {
+          return;
+        }
+
+        const timePassed = now - lastSentAt >= LOCATION_UPDATE_INTERVAL_MS;
+
+        if (!timePassed) {
+          pendingLocationRef.current = acceptedLocation;
+          scheduleTrailingLocationUpdate();
+          return;
+        }
+
+        const sent = sendLocationToServer(
+          acceptedLocation.latitude,
+          acceptedLocation.longitude,
+          acceptedLocation.accuracy,
+          "auto throttled"
+        );
+
+        if (sent) {
+          markLocationAsSent(acceptedLocation);
+        }
+      },
+      (error) => {
+        const message = getGeoErrorMessage(error);
+
+        addLog("Location watch error", message);
+
+        if (error.code === error.PERMISSION_DENIED) {
+          setIsLocationAllowed(false);
+          showLocationPermissionNotice(error);
+          stopLocationWatcher();
+          socket?.disconnect();
+          // alert("Location permission is required. You have been disconnected.");
+          setActiveScreen("home");
+        }
+      },
+      LOCATION_OPTIONS
+    );
+
+    locationWatchIdRef.current = watchId;
+    setIsWatchingLocation(true);
+
+    addLog("Started dynamic location tracking", {
+      intervalMs: LOCATION_UPDATE_INTERVAL_MS,
+      minDistanceMeters: MIN_LOCATION_CHANGE_METERS,
+    });
+  };
+
+  const loginGuest = async (guestUser) => {
+    let location;
+
+    try {
+      location = await getCurrentLocation();
+
+      setLatitude(location.latitude);
+      setLongitude(location.longitude);
+      setIsLocationAllowed(true);
+      setLocationPermissionNotice(null);
+
+      addLog("Location permission granted", location);
+    } catch (error) {
+      setIsLocationAllowed(false);
+
+      const message = getGeoErrorMessage(error);
+      addLog("Location permission denied", message);
+      // alert(message);
+
+      showLocationPermissionNotice(error);
+
+      return null;
+    }
+
+    try {
+      const res = await axios.post(`${API_URL}/api/auth/login`, {
+        userId: guestUser.userId,
+        name: guestUser.name,
+        latitude: Number(location.latitude),
+        longitude: Number(location.longitude),
+      });
+
+      setToken(res.data.token);
+      addLog("Guest login successful", res.data);
+
+      return res.data.token;
+    } catch (error) {
+      addLog("Guest login failed", error.response?.data || error.message);
+      alert("Unable to connect right now. Please try again.");
+      return null;
+    }
+  };
+
+  const connectSocket = (authToken) => {
+    if (!authToken) {
+      alert("Unable to connect. Login token missing.");
+      return;
+    }
+
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+    }
+
+    const socket = io(window.location.origin, {
+      auth: {
+        token: authToken,
+      },
+    });
+
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      setConnected(true);
+      setActiveScreen("chats");
+      addLog("Socket connected", socket.id);
+
+      startLocationWatcher(socket);
+    });
+
+    socket.on("disconnect", () => {
+      setConnected(false);
+      setCurrentRoomId("");
+      stopLocationWatcher();
+      addLog("Socket disconnected");
+    });
+
+    socket.on("connect_error", (error) => {
+      addLog("Socket connection error", error.message);
+      alert(error.message || "Socket connection failed.");
+    });
+
+    socket.on("waiting:joined", (data) => {
+      addLog("Joined waiting room", data);
+      setActiveScreen("chats");
+    });
+
+    socket.on("chat:matched", (data) => {
+      setCurrentRoomId(data.roomId);
+      setMessages([]);
+      setActiveScreen("chats");
+      addLog("Matched with nearby user", data);
+    });
+
+    socket.on("rooms:available", (data) => {
+      addLog("Available rooms received", data);
+    });
+
+    socket.on("room:joined", (data) => {
+      setCurrentRoomId(data.roomId);
+      setActiveScreen("chats");
+      addLog("Room joined", data);
+    });
+
+    socket.on("room:rejoined", (data) => {
+      setCurrentRoomId(data.roomId);
+      setActiveScreen("chats");
+      addLog("Room rejoined", data);
+    });
+
+    socket.on("room:removed", (data) => {
+      setCurrentRoomId("");
+      setMessages([]);
+      setMessageText("");
+      setActiveScreen("home");
+      addLog("Removed from room", data);
+    });
+
+    socket.on("chat:ended", (data) => {
+      setCurrentRoomId("");
+      setMessages([]);
+      setMessageText("");
+      setActiveScreen("home");
+      addLog("Chat ended", data);
+    });
+
+    socket.on("room:user_left", (data) => {
+      setCurrentRoomId("");
+      setMessages([]);
+      setMessageText("");
+      setActiveScreen("home");
+      addLog("User left room", data);
+    });
+
+    socket.on("room:user_left", (data) => {
+      addLog("User left room", data);
+    });
+
+    socket.on("room:members_updated", (data) => {
+      addLog("Room members updated", data);
+    });
+
+    socket.on("room:user_location_updated", (data) => {
+      addLog("Room user location updated", data);
+    });
+
+    socket.on("message:new", (message) => {
+      setMessages((prev) => [...prev, message]);
+      addLog("New message received", message);
+    });
+
+    socket.on("chat:ended", (data) => {
+      setCurrentRoomId("");
+      setMessages([]);
+      addLog("Chat ended", data);
+    });
+
+    socket.on("location:updated", (data) => {
+      addLog("Location updated event", data);
+    });
+
+    socket.on("auth:error", (data) => {
+      addLog("Auth error", data);
+      alert(data?.message || "Authentication failed.");
+    });
+  };
+
+  const handleConnectClick = async () => {
+    setIsLoggingIn(true);
+
+    const guestUser = generateGuestUser();
+
+    setUserId(guestUser.userId);
+    setName(guestUser.name);
+
+    const authToken = await loginGuest(guestUser);
+
+    if (authToken) {
+      connectSocket(authToken);
+    }
+
+    setIsLoggingIn(false);
+  };
+
+  const sendMessage = () => {
+    if (!socketRef.current || !socketRef.current.connected) {
+      alert("Socket not connected");
+      return;
+    }
+
+    if (!currentRoomId) {
+      alert("You are not connected to a nearby friend yet.");
+      return;
+    }
+
+    if (!messageText.trim()) {
+      return;
+    }
+
+    socketRef.current.emit(
+      "message:send",
+      {
+        text: messageText.trim(),
+        clientMessageId: uuidv4(),
+      },
+      (ack) => {
+        addLog("Message send ack", ack);
+      }
+    );
+
+    setMessageText("");
+  };
+
+  const leaveRoom = () => {
+    if (!socketRef.current) return;
+
+    socketRef.current.emit("room:leave", {}, (ack) => {
+      addLog("Leave room ack", ack);
+    });
+
+    stopLocationWatcher();
+
+    socketRef.current?.disconnect();
+    socketRef.current = null;
+
+    setConnected(false);
+    setCurrentRoomId("");
+    setMessages([]);
+    setActiveScreen("home");
+  };
+
+  const isMyMessage = (message) => {
+    const from = String(
+      message.from || message.userId || message.senderId || message.sender || ""
+    );
+
+    return from === userId;
+  };
+
+  useEffect(() => {
+    return () => {
+      stopLocationWatcher();
+      socketRef.current?.disconnect();
+    };
+  }, []);
+
+  return (
+    // <div className="app-shell">
+    <div className={`app-shell ${activeScreen === "home" ? "home-mode" : "chat-mode"}`}>
+      {activeScreen === "home" && locationPermissionNotice && (
+        <LocationPermissionStrip
+          notice={locationPermissionNotice}
+          onRetry={handleConnectClick}
+          isLoading={isLoggingIn}
+        />
+      )}
+      <Header
+        activeScreen={activeScreen}
+        setActiveScreen={setActiveScreen}
+        connected={connected}
+        displayName={displayName}
+      />
+
+      {activeScreen === "home" ? (
+        <LandingPage
+          onConnect={handleConnectClick}
+          isLoading={isLoggingIn}
+          connected={connected}
+          connectionLabel={connectionLabel}
+          onReturnToChat={() => setActiveScreen("chats")}
+        />
+      ) : (
+        <ChatPage
+          displayName={displayName}
+          connected={connected}
+          currentRoomId={currentRoomId}
+          connectionLabel={connectionLabel}
+          messages={messages}
+          messageText={messageText}
+          setMessageText={setMessageText}
+          sendMessage={sendMessage}
+          sendImageMessage={sendImageMessage}
+          isImageUploading={isImageUploading}
+          leaveRoom={leaveRoom}
+          isMyMessage={isMyMessage}
+          latitude={latitude}
+          longitude={longitude}
+          isLocationAllowed={isLocationAllowed}
+          isWatchingLocation={isWatchingLocation}
+          logs={logs}
+        />
+      )}
+    </div>
+  );
+}
+
+function LocationPermissionStrip({ notice, onRetry, isLoading }) {
+  return (
+    <div className="location-info-strip" role="alert">
+      <div className="location-info-main">
+        <div className="location-info-icon">📍</div>
+
+        <div className="location-info-content">
+          <strong>{notice.title}</strong>
+          <p>{notice.message}</p>
+          <span>{notice.steps}</span>
+        </div>
+      </div>
+
+      <button
+        className="permission-retry-btn"
+        type="button"
+        onClick={onRetry}
+        disabled={isLoading}
+      >
+        {isLoading ? "Checking..." : "Try again"}
+      </button>
+    </div>
+  );
+}
+
+function Header({ activeScreen, setActiveScreen, connected, displayName }) {
+  return (
+    <header className="topbar">
+      <button
+        className="brand"
+        type="button"
+        onClick={() => setActiveScreen("home")}
+      >
+        {/* <span className="brand-faces">🌝💙</span> */}
+        <span className="brand-text">
+          Fun <span>With</span> Friends
+        </span>
+      </button>
+
+      <nav className="nav-links">
+        {/* <button
+          className={activeScreen === "home" ? "active" : ""}
+          onClick={() => setActiveScreen("home")}
+        >
+          🏠 Home
+        </button>
+
+        <button
+          className={activeScreen === "chats" ? "active" : ""}
+          onClick={() => setActiveScreen("chats")}
+        >
+          💬 Chats
+        </button> */}
+      </nav>
+
+      <div className="topbar-actions">
+
+        <div className="mini-profile">
+          <div className="avatar small">😊</div>
+          <div>
+            <strong>{displayName}</strong>
+            <span>{connected ? "Online" : "Offline"}</span>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function LandingPage({ onConnect, isLoading, connected, connectionLabel, onReturnToChat }) {
+
+  return (
+    <main className="landing">
+      <section className="hero">
+        <div className="hero-copy">
+          {/* <div className="status-pill green">📍 You’re nearby!</div> */}
+
+          <h1>
+            Chat with <span>nearby friends</span>
+          </h1>
+
+          <p>
+            Meet new people around you, start fun conversations, and make real
+            connections.
+          </p>
+
+          <button
+            className="connect-btn"
+            onClick={onConnect}
+            disabled={isLoading || connected}
+          >
+            {isLoading ? "Finding your location..." : connected ? connectionLabel : "Connect"}
+            <span>{isLoading ? " 📌 " : "➜"}</span>
+          </button>
+
+          {connected || connectionLabel === "Searching nearby" ? (
+            <button
+              className="return-chat-btn"
+              onClick={onReturnToChat}
+              type="button"
+            >
+              Return to Chat
+            </button>
+          ) : null}
+
+        </div>
+
+        <div className="hero-art">
+          <div className="cloud cloud-one"></div>
+          <div className="cloud cloud-two"></div>
+
+          <div className="map-pin">
+            <div className="pin-face">☺</div>
+          </div>
+
+          <div className="chat-bubble bubble-hi">Hi!</div>
+          <div className="chat-bubble bubble-heart">💗</div>
+
+          <div className="friend friend-one">
+            <div className="head">👦</div>
+            <div className="body yellow"></div>
+          </div>
+
+          <div className="friend friend-two">
+            <div className="head">👧</div>
+            <div className="body purple"></div>
+          </div>
+
+          <div className="friend friend-three">
+            <div className="head">🧑🏾</div>
+            <div className="body green-shirt"></div>
+          </div>
+        </div>
+      </section>
+
+      <section className="features" style={{ display: 'flex' }}>
+        <FeatureCard icon="📍" title="Nearby People">
+          Connect with people nearby.
+        </FeatureCard>
+
+        <FeatureCard icon="💬" title="Have a quick chat">
+          Start and make conversations with strangers.
+        </FeatureCard>
+
+        <FeatureCard icon="🙂" title="Have Fun">
+          Share laughs, stories, and good vibes!!
+        </FeatureCard>
+      </section>
+    </main>
+  );
+}
+
+function FeatureCard({ icon, title, children }) {
+  return (
+    <article className="feature-card" style={{ display: "flex", flexDirection: "column" }}>
+      <div className="feature-icon">{icon}</div>
+      <div>
+        <h3>{title}</h3>
+        <p>{children}</p>
+      </div>
+    </article>
+  );
+}
+
+function ChatPage({
+  displayName,
+  connected,
+  currentRoomId,
+  connectionLabel,
+  messages,
+  messageText,
+  setMessageText,
+  sendMessage,
+  sendImageMessage,
+  isImageUploading,
+  leaveRoom,
+  isMyMessage,
+  latitude,
+  longitude,
+  isLocationAllowed,
+  isWatchingLocation,
+  logs,
+}) {
+  const [showConnectedMessage, setShowConnectedMessage] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null);
+  const messagesAreaRef = useRef(null);
+  const imageInputRef = useRef(null);
+
+  const scrollToLatestMessage = (behavior = "smooth") => {
+    requestAnimationFrame(() => {
+      const el = messagesAreaRef.current;
+
+      if (!el) return;
+
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior,
+      });
+    });
+  };
+
+  useEffect(() => {
+    scrollToLatestMessage("smooth");
+  }, [messages, showConnectedMessage, currentRoomId]);
+
+  useEffect(() => {
+    if (!currentRoomId) {
+      setShowConnectedMessage(false);
+      return;
+    }
+
+    setShowConnectedMessage(true);
+
+    const timerId = setTimeout(() => {
+      setShowConnectedMessage(false);
+    }, 4000);
+
+    return () => clearTimeout(timerId);
+  }, [currentRoomId]);
+
+  return (
+    <>
+      <main className="chat-page">
+        <section className="chat-window panel">
+          <div className="chat-header">
+            <div className="chat-user">
+              <div className="avatar">👧</div>
+              <div className="name-display">
+                <h2>You</h2>
+                <p>
+                  <span
+                    className={
+                      connected ? "online-dot-small" : "offline-dot-small"
+                    }
+                  ></span>
+                  {connectionLabel}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="chat-body">
+            {!currentRoomId && (
+              <div className="match-banner">
+                <span></span>
+                <div>
+                  <strong>Waiting for a nearby match</strong>
+                  <p>Keep this screen open. We’ll connect you automatically.</p>
+                </div>
+              </div>
+            )}
+
+            {currentRoomId && showConnectedMessage && (
+              <div className="match-banner connected-banner">
+                <span>🎉</span>
+                <div>
+                  <strong>You're connected nearby!</strong>
+                  <p>You and your new friend are nearby each other.</p>
+                </div>
+              </div>
+            )}
+
+            <div className="messages-area" ref={messagesAreaRef}>
+              {messages.length === 0 ? (
+                <EmptyChatState currentRoomId={currentRoomId} />
+              ) : (
+                messages.map((message, index) => (
+                  <MessageBubble
+                    key={message.clientMessageId || message._id || index}
+                    message={message}
+                    mine={isMyMessage(message)}
+                    onImageClick={setPreviewImage}
+                  />
+                ))
+              )}
+            </div>
+          </div>
+
+          
+          {currentRoomId && <div className="message-input-row">
+            <button
+              type="button"
+              className="emoji-btn"
+              disabled={!currentRoomId || isImageUploading}
+              onClick={() => imageInputRef.current?.click()}
+              title="Send image"
+            >
+              <ImagePlus size={22} />
+            </button>
+
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="hidden-image-input"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+
+                if (file) {
+                  sendImageMessage(file);
+                }
+
+                e.target.value = "";
+              }}
+            />
+
+            <input
+              value={messageText}
+              placeholder={
+                currentRoomId
+                  ? isImageUploading
+                    ? "Uploading image..."
+                    : "Type a message..."
+                  : "Waiting for nearby connection..."
+              }
+              disabled={!currentRoomId || isImageUploading}
+              onChange={(e) => setMessageText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  sendMessage();
+                }
+              }}
+            />
+
+            {currentRoomId && (
+              <button
+                type="button"
+                className="send-btn"
+                onClick={sendMessage}
+                disabled={!currentRoomId || isImageUploading}
+              >
+                <Send className="send-btn-icon" />
+              </button>
+            )}
+          </div>}
+        </section>
+
+        <aside className="right-panel panel">
+          <div className="connection-illustration">
+            <div className="heart">💗</div>
+            <div className="high-five-characters">
+              <div className="high-five">🙋‍♀️</div>
+              <div className="high-five">🙋</div>
+            </div>
+          </div>
+
+          <div className="connected-title">
+            <span>{currentRoomId ? "✅" : "🔎"}</span>
+            <h2>{currentRoomId ? "You’re Connected!" : "Finding Friend"}</h2>
+          </div>
+
+          <p className="connected-subtitle">
+            {currentRoomId
+              ? ""
+              : "Waiting for someone inside your radius."}
+          </p>
+
+          <div className="info-list">
+            <InfoRow icon="📍" title="Location">
+              {isLocationAllowed && latitude && longitude
+                ? `${Number(latitude).toFixed(5)}, ${Number(longitude).toFixed(5)}`
+                : "Not allowed"}
+            </InfoRow>
+
+            <InfoRow icon="🎯" title="Room">
+              {currentRoomId || "No room yet"}
+            </InfoRow>
+
+          </div>
+          <button className="leave-btn" type="button" onClick={leaveRoom}>
+            Leave Chat
+          </button>
+        </aside>
+
+      </main>
+
+      {previewImage && (
+        <ImagePreviewModal
+          image={previewImage}
+          onClose={() => setPreviewImage(null)}
+        />
+      )}
+    </>
+  );
+}
+
+function EmptyChatState({ currentRoomId }) {
+  return (
+    <div className="empty-chat">
+      <div className={`empty-icon ${currentRoomId ? "is-floating" : "is-searching"}`}>{currentRoomId ? "💬" : "🔎"}</div> {/*🔎*/}
+      <h3>{currentRoomId ? "Say hello!" : "Looking for nearby friends"}</h3>
+    </div>
+  );
+}
+
+// function MessageBubble({ message, mine }) {
+//   return (
+//     <div className={`message-row ${mine ? "mine" : "theirs"}`}>
+//       {!mine && <div className="avatar tiny">👧</div>}
+
+//       <div className="message-bubble">
+//         <p>{message.text}</p>
+//         <span>
+//           {new Date(message.createdAt || Date.now()).toLocaleTimeString([], {
+//             hour: "2-digit",
+//             minute: "2-digit",
+//           })}
+//           {mine ? " ✓✓" : ""}
+//         </span>
+//       </div>
+//     </div>
+//   );
+// }
+
+// V2
+// function MessageBubble({ message, mine }) {
+//   const isImageMessage = message.type === "image" && message.imageUrl;
+
+//   return (
+//     <div className={`message-row ${mine ? "mine" : "theirs"}`}>
+//       {!mine && <div className="avatar tiny">👧</div>}
+
+//       <div className={`message-bubble ${isImageMessage ? "image-message-bubble" : ""}`}>
+//         {isImageMessage ? (
+//           <a href={message.imageUrl} target="_blank" rel="noreferrer">
+//             <img
+//               src={message.imageUrl}
+//               alt={message.fileName || "Shared image"}
+//               className="chat-image"
+//               loading="lazy"
+//             />
+//           </a>
+//         ) : (
+//           <p>{message.text}</p>
+//         )}
+
+//         <span>
+//           {new Date(message.sentAt || message.createdAt || Date.now()).toLocaleTimeString([], {
+//             hour: "2-digit",
+//             minute: "2-digit",
+//           })}
+//           {mine ? " ✓✓" : ""}
+//         </span>
+//       </div>
+//     </div>
+//   );
+// }
+
+function ImagePreviewModal({ image, onClose }) {
+  const [zoom, setZoom] = useState(1);
+
+  const zoomIn = () => {
+    setZoom((prev) => Math.min(prev + 0.25, 4));
+  };
+
+  const zoomOut = () => {
+    setZoom((prev) => Math.max(prev - 0.25, 0.5));
+  };
+
+  const resetZoom = () => {
+    setZoom(1);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    document.body.classList.add("modal-open");
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.classList.remove("modal-open");
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div className="image-preview-overlay" onClick={onClose}>
+      <div className="image-preview-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="image-preview-toolbar">
+          <MinusCircle onClick={zoomOut} style={{cursor: 'pointer'}}/>
+          <span>{Math.round(zoom * 100)}%</span>
+          <PlusCircle onClick={zoomIn} style={{cursor: 'pointer'}}/>
+          <button type="button" onClick={resetZoom} style={{paddingLeft:'10px', paddingRight:'10px', fontFamily:'ui-serif'}}>
+            Reset
+          </button>
+
+          <button type="button" className="image-preview-close" onClick={onClose} style={{paddingLeft:'10px', paddingRight:'10px'}}>
+            <X />
+          </button>
+        </div>
+
+        <div className="image-preview-body">
+          <img
+            src={image.src}
+            alt={image.alt}
+            className="image-preview-img"
+            style={{
+              transform: `scale(${zoom})`,
+            }}
+            draggable={false}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MessageBubble({ message, mine, onImageClick }) {
+  const isImageMessage = message.type === "image" && message.imageUrl;
+
+  return (
+    <div className={`message-row ${mine ? "mine" : "theirs"}`}>
+      {!mine && <div className="avatar tiny">👧</div>}
+
+      <div className={`message-bubble ${isImageMessage ? "image-message-bubble" : ""}`}>
+        {isImageMessage ? (
+          <button
+            type="button"
+            className="chat-image-button"
+            onClick={() =>
+              onImageClick({
+                src: message.imageUrl,
+                alt: message.fileName || "Shared image",
+              })
+            }
+          >
+            <img
+              src={message.imageUrl}
+              alt={message.fileName || "Shared image"}
+              className="chat-image"
+              loading="lazy"
+            />
+          </button>
+        ) : (
+          <p>{message.text}</p>
+        )}
+
+        <span>
+          {new Date(message.sentAt || message.createdAt || Date.now()).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+          {mine ? " ✓✓" : ""}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function InfoRow({ icon, title, children }) {
+  return (
+    <div className="info-row">
+      <span>{icon}</span>
+      <div>
+        <strong>{title}</strong>
+        <p>{children}</p>
+      </div>
+    </div>
+  );
+}
+
+export default App;
+
+
+
+// V1
+// function ChatPage({
+//   displayName,
+//   connected,
+//   currentRoomId,
+//   connectionLabel,
+//   messages,
+//   messageText,
+//   setMessageText,
+//   sendMessage,
+//   leaveRoom,
+//   isMyMessage,
+//   latitude,
+//   longitude,
+//   isLocationAllowed,
+//   isWatchingLocation,
+//   logs,
+// }) {
+//   const [showConnectedMessage, setShowConnectedMessage] = useState(true);
+//   const messagesEndRef = useRef(null);
+
+//   useEffect(() => {
+//     messagesEndRef.current?.scrollIntoView({
+//       behavior: "smooth",
+//       block: "end",
+//     });
+//   }, [messages]);
+
+//   return (
+//     <main className="chat-page">
+
+//       <section className="chat-window panel">
+//         <div className="chat-header">
+//           <div className="chat-user">
+//             <div className="avatar">👧</div>
+//             <div className="name-display">
+//               {/* <h2>{currentRoomId ? "You" : "Nearby Friend"}</h2> */}
+//               <h2>You</h2>
+//               <p>
+//                 <span className={connected ? "online-dot-small" : "offline-dot-small"}></span>
+//                 {connectionLabel}
+//               </p>
+//             </div>
+//           </div>
+
+//           {/* <div className="chat-actions">
+//             <button type="button">📞</button>
+//             <button type="button">🛡️</button>
+//             <button type="button">⋯</button>
+//           </div> */}
+//         </div>
+
+//         {showConnectedMessage && 
+//           <div className="match-banner">
+//             <span>{currentRoomId ? '🎉' : ''}</span>
+//             <div>
+//               <strong>
+//                 {currentRoomId
+//                   ? "You're connected nearby!"
+//                   : "Waiting for a nearby match"}
+//               </strong>
+//               <p>
+//                 {currentRoomId
+//                   ? "You and your new friend are nearby each other."
+//                   : "Keep this screen open. We’ll connect you automatically."}
+//               </p>
+//               {/* <X style={{"cursor":"pointer"}} onClick={() => setShowConnectedMessage(false)}/> */}
+//             </div>
+//           </div>
+//         }
+
+//         <div className="messages-area">
+//           {messages.length === 0 ? (
+//             <EmptyChatState currentRoomId={currentRoomId} />
+//           ) : (
+//             messages.map((message, index) => (
+//               <MessageBubble
+//                 key={message.clientMessageId || message._id || index}
+//                 message={message}
+//                 mine={isMyMessage(message)}
+//               />
+//             ))
+//           )}
+//         </div>
+
+//         <div className="message-input-row">
+//           <button type="button" className="emoji-btn">
+//             🙂
+//           </button>
+
+//           <input
+//             value={messageText}
+//             placeholder={
+//               currentRoomId
+//                 ? "Type a message..."
+//                 : "Waiting for nearby connection..."
+//             }
+//             disabled={!currentRoomId}
+//             onChange={(e) => setMessageText(e.target.value)}
+//             onKeyDown={(e) => {
+//               if (e.key === "Enter") {
+//                 sendMessage();
+//               }
+//             }}
+//           />
+
+//           {currentRoomId &&
+//             <button
+//               type="button"
+//               className="send-btn"
+//               onClick={sendMessage}
+//               disabled={!currentRoomId}
+//             >
+//               {/* ➤ */}
+//               <Send className="send-btn-icon" />
+//             </button>
+//           }
+//         </div>
+//       </section>
+
+//       <aside className="right-panel panel">
+//         <div className="connection-illustration">
+//           <div className="heart">💗</div>
+//           <div className="high-five-characters">
+//             <div className="high-five">🙋‍♀️</div>
+//             <div className="high-five">🙋</div>
+//           </div>
+//         </div>
+
+//         <div className="connected-title">
+//           <span>{currentRoomId ? "✅" : "🔎"}</span>
+//           <h2>{currentRoomId ? "You’re Connected!" : "Finding Friend"}</h2>
+//         </div>
+
+//         <p className="connected-subtitle">
+//           {currentRoomId
+//             ? ""
+//             : "Waiting for someone inside your nearby radius."}
+//         </p>
+
+//         <div className="info-list">
+//           <InfoRow icon="📍" title="Location">
+//             {isLocationAllowed && latitude && longitude
+//               ? `${Number(latitude).toFixed(5)}, ${Number(longitude).toFixed(5)}`
+//               : "Not allowed"}
+//           </InfoRow>
+
+//           {/* <InfoRow icon="📶" title="Socket">
+//             {connected ? "Connected" : "Disconnected"}
+//           </InfoRow> */}
+
+//           <InfoRow icon="🎯" title="Room">
+//             {currentRoomId || "No room yet"}
+//           </InfoRow>
+
+//         </div>
+//         <button className="leave-btn" type="button" onClick={leaveRoom}>
+//           Leave Chat
+//         </button>
+
+//         {/* <button className="profile-btn" type="button">
+//           👤 View Profile
+//         </button> */}
+
+//         {/* <details className="debug-logs">
+//           <summary>Debug logs</summary>
+
+//           <div>
+//             {logs.slice(0, 8).map((log, index) => (
+//               <p key={index}>
+//                 <strong>{log.time}</strong> — {log.msg}
+//               </p>
+//             ))}
+//           </div>
+//         </details> */}
+//       </aside>
+//     </main>
+//   );
+// }
