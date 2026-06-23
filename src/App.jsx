@@ -865,7 +865,7 @@ import { v4 as uuidv4 } from "uuid";
 import "./App.css";
 import { Send, ImagePlus, Plus, Minus, X, PlusCircle, MinusCircle, Search } from 'lucide-react';
 
-const API_URL = "";
+const API_URL = "https://funwfriends-server.onrender.com";
 
 const GUEST_NAMES = [
   "Happy Panda",
@@ -1008,7 +1008,7 @@ function App() {
       formData.append("image", file);
       formData.append("clientMessageId", uuidv4());
 
-      const res = await axios.post(`${API_URL}/api/messages/image`, formData, {
+      const res = await axios.post(`${API_URL}/messages/image`, formData, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -1488,7 +1488,7 @@ function App() {
     }
 
     try {
-      const res = await axios.post(`${API_URL}/api/auth/login`, {
+      const res = await axios.post(`${API_URL}/auth/login`, {
         userId: guestUser.userId,
         name: guestUser.name,
         latitude: Number(location.latitude),
@@ -1516,7 +1516,8 @@ function App() {
       socketRef.current.disconnect();
     }
 
-    const socket = io(window.location.origin, {
+    //const socket = io(window.location.origin, {
+    const socket = io(API_URL, {
       auth: {
         token: authToken,
       },
