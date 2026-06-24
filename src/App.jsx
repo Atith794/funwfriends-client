@@ -1001,12 +1001,27 @@ function Header({ activeScreen, setActiveScreen, connected, displayName, connect
 
 function LandingPage({ onConnect, isLoading, connected, connectionLabel, onReturnToChat, onlineUsers }) {
 
+  function getOnlineUsersLabel(onlineUsers) {
+    const count = Number(onlineUsers || 0);
+
+    if (count <= 0) {
+      return "Be the first one to connect now.";
+    }
+
+    if (count < 1000) {
+      return `${count} ${count === 1 ? "user is" : "users are"} online now`;
+    }
+
+    const roundedCount = Math.floor(count / 1000) * 1000;
+    const cappedCount = Math.min(roundedCount, 5000);
+
+    return `${cappedCount}+ users are online`;
+  }
+  
   return (
     <main className="landing">
       <section className="hero">
         <div className="hero-copy">
-          {/* <div className="status-pill green">📍 You’re nearby!</div> */}
-
           <h1>
             Chat with <span>nearby friends</span>
           </h1>
@@ -1026,19 +1041,10 @@ function LandingPage({ onConnect, isLoading, connected, connectionLabel, onRetur
           </button>
 
           <div className="online-users-pill">
-            {/* <span className="online-pulse-dot"></span> */}
             <span
               className="online-dot-small"
             ></span>
-
-            {onlineUsers > 0 ? (
-              <p>
-                <strong style={{color:"green", }}>{onlineUsers}</strong>{" "}
-                {onlineUsers === 1 ? "user is" : "users are"} online now
-              </p>
-            ) : (
-              <p>Be the first one to connect now.</p>
-            )}
+            <p>{getOnlineUsersLabel(onlineUsers)}</p>
           </div>
 
           {connected || connectionLabel === "Searching nearby" ? (
