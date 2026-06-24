@@ -240,6 +240,10 @@ button:disabled {
   padding-left: 52px;
 }
 
+.hero-copy h1 {
+  color: #1f2937;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -1388,6 +1392,10 @@ button:disabled {
 }
 
 @media (max-width: 820px) {
+  .hero-copy h1 {
+    color: #1f2937 !important;
+  }
+  
   .topbar {
     height: 76px;
     flex: 0 0 76px;
@@ -2018,6 +2026,10 @@ body,
     font-size: 14px;
   }
 
+  .hero-copy h1 {
+    color: #1f2937 !important;
+  }
+
   .brand-text {
     font-size: 17px;
     line-height: 1.05;
@@ -2136,6 +2148,10 @@ body,
 }
 
 @media (max-width: 420px) {
+  .hero-copy h1 {
+    color: #1f2937 !important;
+  }
+  
   .hero h1 {
     font-size: 30px;
   }
