@@ -39,6 +39,7 @@ function App() {
   const [isImageUploading, setIsImageUploading] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState(0);
   const [maintenanceNotice, setMaintenanceNotice] = useState(null);
+  const [matchRadiusMeters, setMatchRadiusMeters] = useState(import.meta.env.MATCH_RADIUS_METERS);
 
   const lastSentLocationRef = useRef(null);
   const locationWatchIdRef = useRef(null);
@@ -279,6 +280,10 @@ function App() {
       const res = await axios.get(`${API_URL}/app/runtime-config`);
 
       const config = res.data?.config;
+
+      if (config?.Match_Radius) {
+        setMatchRadiusMeters(Number(config.Match_Radius));
+      }
 
       if (config?.isMaintenance) {
         setMaintenanceNotice({
@@ -889,6 +894,33 @@ function App() {
       socket.disconnect();
       socketRef.current = null;
     });
+
+    socket.on("app:runtime_config_updated", (data) => {
+      addLog("Runtime config updated", data);
+
+      if (data?.Match_Radius) {
+        setMatchRadiusMeters(Number(data?.Match_Radius))
+      }
+
+      if (data?.isMaintenance) {
+        setMaintenanceNotice({
+          title: "Website under maintenance",
+          message: "Website is under maintenance. Please try again later.",
+        });
+
+        stopLocationWatcher();
+
+        setConnected(false);
+        setCurrentRoomId("");
+        setMessages([]);
+        setMessageText("");
+        setActiveScreen("home");
+
+        socket.disconnect();
+        socketRef.current = null;
+      }
+
+    });
   };
 
   const handleConnectClick = async () => {
@@ -1020,6 +1052,7 @@ function App() {
           isLocationAllowed={isLocationAllowed}
           isWatchingLocation={isWatchingLocation}
           logs={logs}
+          matchRadiusMeters={matchRadiusMeters}
         />
       )}
     </div>
@@ -1139,14 +1172,14 @@ function LandingPage({ onConnect, isLoading, connected, connectionLabel, onRetur
             onClick={onConnect}
             disabled={isLoading || connected || isMaintenance}
           >
-            {isMaintenance ? "Under Maintenance" : isLoading ? "Finding your location..." : connected ? connectionLabel : "Connect"}
-            <span>{isLoading ? "➜" : "➜"}</span>
+            {isMaintenance ? "Connect" : isLoading ? "Finding your location..." : connected ? connectionLabel : "Connect"}
+            <span>{isLoading ? " ➜ " : "➜"}</span>
           </button>
 
           <div className="online-users-pill">
-            {isMaintenance ? <span className="online-maintenance-dot-small"></span>:<span className="online-dot-small"></span>}
+            {isMaintenance ? <span className="online-maintenance-dot-small"></span> : <span className="online-dot-small"></span>}
 
-            {isMaintenance ? <p>Please wait until we are back</p>:<p>{getOnlineUsersLabel(onlineUsers)}</p>}
+            {isMaintenance ? <p>Please wait until we are back</p> : <p>{getOnlineUsersLabel(onlineUsers)}</p>}
           </div>
 
           {connected || connectionLabel === "Searching nearby" ? (
@@ -1236,6 +1269,7 @@ function ChatPage({
   isLocationAllowed,
   isWatchingLocation,
   logs,
+  matchRadiusMeters
 }) {
   const [showConnectedMessage, setShowConnectedMessage] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
@@ -1370,7 +1404,7 @@ function ChatPage({
 
             <div className="messages-area" ref={messagesAreaRef}>
               {messages.length === 0 ? (
-                <EmptyChatState currentRoomId={currentRoomId} />
+                <EmptyChatState currentRoomId={currentRoomId} matchRadiusMeters={matchRadiusMeters}/>
               ) : (
                 messages.map((message, index) => (
                   <MessageBubble
@@ -1454,11 +1488,11 @@ function ChatPage({
   );
 }
 
-function EmptyChatState({ currentRoomId }) {
+function EmptyChatState({ currentRoomId, matchRadiusMeters }) {
   return (
     <div className="empty-chat">
       <div className={`empty-icon ${currentRoomId ? "is-floating" : "is-searching"}`}>{currentRoomId ? "💬" : "🔎"}</div> {/*🔎*/}
-      <h3>{currentRoomId ? "Say hello!" : "Looking for nearby friends"}</h3>
+      <h3>{currentRoomId ? "Say hello!" : `Looking for nearby friends within the radius of ${matchRadiusMeters} meters`}</h3>
     </div>
   );
 }
