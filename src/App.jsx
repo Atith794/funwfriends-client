@@ -38,6 +38,7 @@ function App() {
   const [logs, setLogs] = useState([]);
   const [isImageUploading, setIsImageUploading] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState(0);
+  const [maintenanceNotice, setMaintenanceNotice] = useState(null);
 
   const lastSentLocationRef = useRef(null);
   const locationWatchIdRef = useRef(null);
@@ -97,9 +98,9 @@ function App() {
               message:
                 "Your browser is currently blocking location access for this site.",
               steps:
-                
+                // <p>To enable it: Click the locked map pin/site or
                 <p>To enable it: Click the locked map pin/site{' '}
-                
+                  {/* <MapPinOff className="inline-block h-4 w-4 align-text-bottom mx-1"/>{' '} */}
                   settings icon near the browser address bar → Location → Allow → refresh or click Try again.
                 </p>
             });
@@ -272,6 +273,47 @@ function App() {
       ...prev,
     ]);
   };
+
+  const syncRuntimeConfig = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/app/runtime-config`);
+
+      const config = res.data?.config;
+
+      if (config?.isMaintenance) {
+        setMaintenanceNotice({
+          title: "Website under maintenance",
+          message: "Website is under maintenance. Please try again later.",
+        });
+
+        setActiveScreen("home");
+
+        if (socketRef.current) {
+          socketRef.current.disconnect();
+          socketRef.current = null;
+        }
+
+        stopLocationWatcher();
+        setConnected(false);
+        setCurrentRoomId("");
+        setMessages([]);
+        setMessageText("");
+
+        return;
+      }
+
+      setMaintenanceNotice(null);
+    } catch (error) {
+      console.log(
+        "Failed to fetch runtime config:",
+        error.response?.data || error.message
+      );
+    }
+  };
+
+  useEffect(() => {
+    syncRuntimeConfig();
+  }, []);
 
   function getDistanceInMeters(lat1, lon1, lat2, lon2) {
     const EARTH_RADIUS_METERS = 6371000;
@@ -644,20 +686,18 @@ function App() {
       setLocationPermissionNotice(null);
 
       addLog("Location permission granted", location);
-    } catch (error) {
+    }
+    catch (error) {
       setIsLocationAllowed(false);
 
       const message = getGeoErrorMessage(error);
       addLog("Location permission denied", message);
-      // alert(message);
 
       showLocationPermissionNotice(error);
 
       return null;
     }
-
     try {
-      // const res = await axios.post(`${API_URL}/api/auth/login`, {
       const res = await axios.post(`${API_URL}/auth/login`, {
         userId: guestUser.userId,
         name: guestUser.name,
@@ -670,7 +710,22 @@ function App() {
 
       return res.data.token;
     } catch (error) {
-      addLog("Guest login failed", error.response?.data || error.message);
+      const responseData = error.response?.data;
+
+      addLog("Guest login failed", responseData || error.message);
+
+      if (responseData?.isMaintenance) {
+        setMaintenanceNotice({
+          title: "Website under maintenance",
+          message:
+            responseData.message ||
+            "Website is under maintenance. Please try again later.",
+        });
+
+        setActiveScreen("home");
+        return null;
+      }
+
       alert("Unable to connect right now. Please try again.");
       return null;
     }
@@ -686,7 +741,6 @@ function App() {
       socketRef.current.disconnect();
     }
 
-    // const socket = io(window.location.origin, {
     const socket = io(API_URL, {
       auth: {
         token: authToken,
@@ -712,6 +766,17 @@ function App() {
 
     socket.on("connect_error", (error) => {
       addLog("Socket connection error", error.message);
+
+      if (error.message?.toLowerCase().includes("maintenance")) {
+        setMaintenanceNotice({
+          title: "Website under maintenance",
+          message: error.message,
+        });
+
+        setActiveScreen("home");
+        return;
+      }
+
       alert(error.message || "Socket connection failed.");
     });
 
@@ -802,6 +867,28 @@ function App() {
       addLog("Auth error", data);
       alert(data?.message || "Authentication failed.");
     });
+
+    socket.on("app:maintenance", (data) => {
+      addLog("Maintenance mode enabled", data);
+
+      setMaintenanceNotice({
+        title: "Website under maintenance",
+        message:
+          data?.message ||
+          "Website is under maintenance. Please try again later.",
+      });
+
+      stopLocationWatcher();
+
+      setConnected(false);
+      setCurrentRoomId("");
+      setMessages([]);
+      setMessageText("");
+      setActiveScreen("home");
+
+      socket.disconnect();
+      socketRef.current = null;
+    });
   };
 
   const handleConnectClick = async () => {
@@ -884,8 +971,11 @@ function App() {
   }, []);
 
   return (
-    // <div className="app-shell">
     <div className={`app-shell ${activeScreen === "home" ? "home-mode" : "chat-mode"}`}>
+      {maintenanceNotice && (
+        <MaintenanceStrip notice={maintenanceNotice} />
+      )}
+
       {activeScreen === "home" && locationPermissionNotice && (
         <LocationPermissionStrip
           notice={locationPermissionNotice}
@@ -909,6 +999,7 @@ function App() {
           connectionLabel={connectionLabel}
           onReturnToChat={() => setActiveScreen("chats")}
           onlineUsers={onlineUsers}
+          isMaintenance={Boolean(maintenanceNotice)}
         />
       ) : (
         <ChatPage
@@ -931,6 +1022,21 @@ function App() {
           logs={logs}
         />
       )}
+    </div>
+  );
+}
+
+function MaintenanceStrip({ notice }) {
+  return (
+    <div className="maintenance-info-strip" role="alert">
+      <div className="location-info-main">
+        <div className="location-info-icon">🛠️</div>
+
+        <div className="location-info-content">
+          <strong>{notice.title}</strong>
+          <p>{notice.message}</p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -968,14 +1074,12 @@ function Header({ activeScreen, setActiveScreen, connected, displayName, connect
         type="button"
         onClick={() => setActiveScreen("home")}
       >
-        
         <span className="brand-text">
           Fun <span>With</span> Friends
         </span>
       </button>
 
       <nav className="nav-links">
-        
       </nav>
 
       <div className="topbar-actions">
@@ -984,7 +1088,6 @@ function Header({ activeScreen, setActiveScreen, connected, displayName, connect
           <div className="avatar small">😊</div>
           <div className="name-display">
             <strong>{displayName}</strong>
-            {/* <span>{connected ? "Online" : "Offline"}</span> */}
             <p className="name-display-child">
               <span
                 className={
@@ -999,7 +1102,7 @@ function Header({ activeScreen, setActiveScreen, connected, displayName, connect
   );
 }
 
-function LandingPage({ onConnect, isLoading, connected, connectionLabel, onReturnToChat, onlineUsers }) {
+function LandingPage({ onConnect, isLoading, connected, connectionLabel, onReturnToChat, onlineUsers, isMaintenance }) {
 
   function getOnlineUsersLabel(onlineUsers) {
     const count = Number(onlineUsers || 0);
@@ -1017,7 +1120,7 @@ function LandingPage({ onConnect, isLoading, connected, connectionLabel, onRetur
 
     return `${cappedCount}+ users are online`;
   }
-  
+
   return (
     <main className="landing">
       <section className="hero">
@@ -1034,17 +1137,16 @@ function LandingPage({ onConnect, isLoading, connected, connectionLabel, onRetur
           <button
             className="connect-btn"
             onClick={onConnect}
-            disabled={isLoading || connected}
+            disabled={isLoading || connected || isMaintenance}
           >
-            {isLoading ? "Finding your location..." : connected ? connectionLabel : "Connect"}
+            {isMaintenance ? "Under Maintenance" : isLoading ? "Finding your location..." : connected ? connectionLabel : "Connect"}
             <span>{isLoading ? "➜" : "➜"}</span>
           </button>
 
           <div className="online-users-pill">
-            <span
-              className="online-dot-small"
-            ></span>
-            <p>{getOnlineUsersLabel(onlineUsers)}</p>
+            {isMaintenance ? <span className="online-maintenance-dot-small"></span>:<span className="online-dot-small"></span>}
+
+            {isMaintenance ? <p>Please wait until we are back</p>:<p>{getOnlineUsersLabel(onlineUsers)}</p>}
           </div>
 
           {connected || connectionLabel === "Searching nearby" ? (
@@ -1087,7 +1189,6 @@ function LandingPage({ onConnect, isLoading, connected, connectionLabel, onRetur
         </div>
       </section>
 
-      {/* <section className="features" style={{ display: 'flex' }}> */}
       <section className="features">
         <FeatureCard icon="📍" title="Nearby People">
           Connect with people nearby.
@@ -1214,10 +1315,8 @@ function ChatPage({
               <div className="avatar">👧</div>
               <div className="name-display">
                 <h2>You</h2>
-               
               </div>
             </div>
-      
             <div className="chat-menu-wrapper" ref={menuRef}>
               <button
                 type="button"
