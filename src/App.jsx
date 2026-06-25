@@ -1135,7 +1135,120 @@ function Header({ activeScreen, setActiveScreen, connected, displayName, connect
   );
 }
 
-function LandingPage({ onConnect, isLoading, connected, connectionLabel, onReturnToChat, onlineUsers, isMaintenance }) {
+// function LandingPage({ onConnect, isLoading, connected, connectionLabel, onReturnToChat, onlineUsers, isMaintenance }) {
+
+//   function getOnlineUsersLabel(onlineUsers) {
+//     const count = Number(onlineUsers || 0);
+
+//     if (count <= 0) {
+//       return "Be the first one to connect now.";
+//     }
+
+//     if (count < 1000) {
+//       return `${count} ${count === 1 ? "user is" : "users are"} online now`;
+//     }
+
+//     const roundedCount = Math.floor(count / 1000) * 1000;
+//     const cappedCount = Math.min(roundedCount, 5000);
+
+//     return `${cappedCount}+ users are online`;
+//   }
+
+//   return (
+//     <main className="landing">
+//       <section className="hero">
+//         <div className="hero-copy">
+//           <h1>
+//             Chat with <span>nearby friends</span>
+//           </h1>
+
+//           <p>
+//             Meet new people around you, start fun conversations, and make real
+//             connections.
+//           </p>
+
+//           <button
+//             className="connect-btn"
+//             onClick={onConnect}
+//             disabled={isLoading || connected || isMaintenance}
+//           >
+//             {isMaintenance ? "Connect" : isLoading ? "Finding your location..." : connected ? connectionLabel : "Connect"}
+//             <span>{isLoading ? " ➜ " : "➜"}</span>
+//           </button>
+
+//           <div className="online-users-pill">
+//             {isMaintenance ? <span className="online-maintenance-dot-small"></span> : <span className="online-dot-small"></span>}
+
+//             {isMaintenance ? <p>Please wait until we are back</p> : <p>{getOnlineUsersLabel(onlineUsers)}</p>}
+//           </div>
+
+//           {connected || connectionLabel === "Searching nearby" ? (
+//             <button
+//               className="return-chat-btn"
+//               onClick={onReturnToChat}
+//               type="button"
+//             >
+//               Return to Chat
+//             </button>
+//           ) : null}
+
+//         </div>
+
+//         <div className="hero-art">
+//           <div className="cloud cloud-one"></div>
+//           <div className="cloud cloud-two"></div>
+
+//           <div className="map-pin">
+//             <div className="pin-face">☺</div>
+//           </div>
+
+//           <div className="chat-bubble bubble-hi">Hi!</div>
+//           <div className="chat-bubble bubble-heart">💗</div>
+
+//           <div className="friend friend-one">
+//             <div className="head">👦</div>
+//             <div className="body yellow"></div>
+//           </div>
+
+//           <div className="friend friend-two">
+//             <div className="head">👧</div>
+//             <div className="body purple"></div>
+//           </div>
+
+//           <div className="friend friend-three">
+//             <div className="head">🧑🏾</div>
+//             <div className="body green-shirt"></div>
+//           </div>
+//         </div>
+//       </section>
+
+//       <section className="features">
+//         <FeatureCard icon="📍" title="Nearby People">
+//           Connect with people nearby.
+//         </FeatureCard>
+
+//         <FeatureCard icon="💬" title="Have a quick chat">
+//           Start and make conversations with strangers.
+//         </FeatureCard>
+
+//         <FeatureCard icon="🙂" title="Have Fun">
+//           Share laughs, stories, and good vibes!!
+//         </FeatureCard>
+//       </section>
+//     </main>
+//   );
+// }
+
+function LandingPage({
+  onConnect,
+  isLoading,
+  connected,
+  connectionLabel,
+  onReturnToChat,
+  onlineUsers,
+  isMaintenance,
+}) {
+  const [showTerms, setShowTerms] = useState(false);
 
   function getOnlineUsersLabel(onlineUsers) {
     const count = Number(onlineUsers || 0);
@@ -1172,14 +1285,28 @@ function LandingPage({ onConnect, isLoading, connected, connectionLabel, onRetur
             onClick={onConnect}
             disabled={isLoading || connected || isMaintenance}
           >
-            {isMaintenance ? "Connect" : isLoading ? "Finding your location..." : connected ? connectionLabel : "Connect"}
+            {isMaintenance
+              ? "Connect"
+              : isLoading
+                ? "Finding your location..."
+                : connected
+                  ? connectionLabel
+                  : "Connect"}
             <span>{isLoading ? " ➜ " : "➜"}</span>
           </button>
 
           <div className="online-users-pill">
-            {isMaintenance ? <span className="online-maintenance-dot-small"></span> : <span className="online-dot-small"></span>}
+            {isMaintenance ? (
+              <span className="online-maintenance-dot-small"></span>
+            ) : (
+              <span className="online-dot-small"></span>
+            )}
 
-            {isMaintenance ? <p>Please wait until we are back</p> : <p>{getOnlineUsersLabel(onlineUsers)}</p>}
+            {isMaintenance ? (
+              <p>Please wait until we are back</p>
+            ) : (
+              <p>{getOnlineUsersLabel(onlineUsers)}</p>
+            )}
           </div>
 
           {connected || connectionLabel === "Searching nearby" ? (
@@ -1191,7 +1318,6 @@ function LandingPage({ onConnect, isLoading, connected, connectionLabel, onRetur
               Return to Chat
             </button>
           ) : null}
-
         </div>
 
         <div className="hero-art">
@@ -1235,6 +1361,180 @@ function LandingPage({ onConnect, isLoading, connected, connectionLabel, onRetur
           Share laughs, stories, and good vibes!!
         </FeatureCard>
       </section>
+
+      <footer className="landing-footer">
+        <button
+          type="button"
+          className="footer-terms-btn"
+          onClick={() => setShowTerms(true)}
+        >
+          <span className="footer-terms-icon" aria-hidden="true">
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <path d="M14 2v6h6" />
+              <path d="M8 13h8" />
+              <path d="M8 17h6" />
+            </svg>
+          </span>
+          Terms and conditions
+        </button>
+
+        <p className="footer-copyright">© 2026 All rights reserved.</p>
+
+        <div className="footer-powered-wrapper">
+          <p className="footer-powered">
+            Powered by <span>A&amp;A</span>
+          </p>
+
+          <div className="footer-tooltip">SaiAmarendra &amp; Atith</div>
+        </div>
+      </footer>
+
+      {showTerms && (
+        <div className="terms-modal-overlay" onClick={() => setShowTerms(false)}>
+          <div className="terms-modal" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="terms-close-btn"
+              onClick={() => setShowTerms(false)}
+            >
+              ×
+            </button>
+
+            <h2>Terms and Conditions</h2>
+
+            <p>
+              By accessing or using this app, you agree to the following Terms and Conditions. Please read them carefully before using the app.
+            </p>
+
+            <h2>1. Voluntary Use of the App</h2>
+
+            <p>
+              This app is designed for fun, casual, and friendly conversations with nearby users.
+              By using this app, you confirm that you are using it on your own wish, will, and responsibility.
+              You are not forced, advised, or encouraged by the app to connect with, chat with, meet, trust, or
+              share information with any other user.
+            </p>
+
+            <h2>2. User Responsibility</h2>
+
+            <p>
+              Users are fully responsible for their own conversations, behavior, actions, and safety while using the app.
+              You agree to use the app respectfully and responsibly. You must not use the app for harassment, abuse, threats,
+              hate speech, bullying, impersonation, fraud, illegal activity, or any behavior that may harm another person.
+            </p>
+
+            <h2>3. No Sensitive Information Sharing</h2>
+
+            <p>
+              The app does not encourage, request, or advise users to share sensitive personal information with others.
+              Users should not share information such as phone numbers, addresses, live location, financial details,
+              passwords, OTPs, private photos, identity documents, personal secrets, or any other sensitive information.
+              If a user voluntarily shares any personal, private, or sensitive information with another user, they do so at their own risk.
+            </p>
+
+            <h2>4. No Responsibility for Information Leaks</h2>
+
+            <p>
+              The app is not responsible for any information leak, misuse of shared information, screenshots, recordings,
+              forwarding of chats, or any damage caused due to information voluntarily shared by the user.
+
+              Users must understand that online conversations may carry privacy and safety risks.
+            </p>
+
+            <h2>5. Nearby Matching and Location-Based Use</h2>
+
+            <p>
+              The app may use approximate location or nearby matching features to connect users.
+              The app does not guarantee the exact identity, distance, location, safety, or intention of any user.
+
+              Users should not rely completely on the app’s nearby matching feature for personal safety decisions.
+            </p>
+
+            <h2>6. No Guarantee of User Identity</h2>
+
+            <p>
+              The app does not guarantee that any user is who they claim to be. Users are responsible for being
+              careful while interacting with unknown or nearby users.
+
+              You should avoid trusting strangers blindly and should not make personal, financial, or safety-related
+              decisions based only on conversations inside the app.
+            </p>
+
+            <h2>7. Meeting Other Users</h2>
+
+            <p>
+              The app is meant for online interaction only. The app does not advise, encourage, or take responsibility
+              for users meeting each other in person.
+
+              If users decide to meet outside the app, they do so completely at their own risk and responsibility.
+            </p>
+
+            <h2>8. User-Generated Content</h2>
+
+            <p>
+              All messages, images, text, or other content shared by users are the responsibility of the user who
+              shares them.
+
+              The app is not responsible for user-generated content, including offensive, false, harmful, misleading,
+              or inappropriate content shared by other users.
+            </p>
+
+            <h2>9. Prohibited Content</h2>
+
+            <p>
+              Users must not share content that is illegal, abusive, threatening, sexually explicit, hateful,
+              discriminatory, violent, misleading, or harmful to others.
+
+              Users must not share another person’s private information, photos, screenshots, or conversations
+              without permission.
+            </p>
+
+            <h2>10. Safety Disclaimer</h2>
+
+            <p>
+              The app tries to provide a fun and simple way to chat with nearby people, but it cannot guarantee
+              user safety, privacy, availability, uninterrupted service, or the behavior of other users.
+
+              Users must use their own judgment and take necessary precautions while using the app.
+            </p>
+
+            <h2>11. Limitation of Liability</h2>
+
+            <p>
+              The app, its owners, developers, and team members are not responsible for any direct
+              or indirect damage, loss, mental stress, privacy issue, safety issue, data leak,
+              financial loss, personal dispute, or any other problem caused while using the app.
+
+              The user agrees that they use the app at their own risk.
+            </p>
+
+            <h2>12. Changes to These Terms</h2>
+
+            <p>
+              The app may update or modify these Terms and Conditions
+              from time to time. Continued use of the app after changes
+              means the user accepts the updated Terms.
+            </p>
+
+            <h2>13. Acceptance</h2>
+
+            <p>
+              By using this app, you confirm that you have read, understood,
+              and agreed to these Terms and Conditions.
+            </p>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
@@ -1404,7 +1704,7 @@ function ChatPage({
 
             <div className="messages-area" ref={messagesAreaRef}>
               {messages.length === 0 ? (
-                <EmptyChatState currentRoomId={currentRoomId} matchRadiusMeters={matchRadiusMeters}/>
+                <EmptyChatState currentRoomId={currentRoomId} matchRadiusMeters={matchRadiusMeters} />
               ) : (
                 messages.map((message, index) => (
                   <MessageBubble
