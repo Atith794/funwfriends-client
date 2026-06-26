@@ -37,6 +37,8 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [logs, setLogs] = useState([]);
   const [isImageUploading, setIsImageUploading] = useState(false);
+  const [imageUploadBlockedUntil, setImageUploadBlockedUntil] = useState(null);
+  const [imageUploadCooldownSeconds, setImageUploadCooldownSeconds] = useState(0);
   const [onlineUsers, setOnlineUsers] = useState(0);
   const [maintenanceNotice, setMaintenanceNotice] = useState(null);
   const [matchRadiusMeters, setMatchRadiusMeters] = useState(import.meta.env.MATCH_RADIUS_METERS);
@@ -53,6 +55,32 @@ function App() {
   const [isWatchingLocation, setIsWatchingLocation] = useState(false);
   const [useMockLocation] = useState(false);
   const [locationPermissionNotice, setLocationPermissionNotice] = useState(null);
+
+  useEffect(() => {
+    if (!imageUploadBlockedUntil) {
+      setImageUploadCooldownSeconds(0);
+      return;
+    }
+
+    const updateCooldown = () => {
+      const remainingMs = imageUploadBlockedUntil - Date.now();
+      const remainingSeconds = Math.ceil(remainingMs / 1000);
+
+      if (remainingSeconds <= 0) {
+        setImageUploadBlockedUntil(null);
+        setImageUploadCooldownSeconds(0);
+        return;
+      }
+
+      setImageUploadCooldownSeconds(remainingSeconds);
+    };
+
+    updateCooldown();
+
+    const intervalId = setInterval(updateCooldown, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [imageUploadBlockedUntil]);
 
   useEffect(() => {
     let isMounted = true;
@@ -147,6 +175,13 @@ function App() {
   const sendImageMessage = async (file) => {
     if (!file) return;
 
+    if (imageUploadBlockedUntil && Date.now() < imageUploadBlockedUntil) {
+      alert(
+        `Image upload limit reached. Only 5 images are allowed to upload per day.`
+      );
+      return;
+    }
+
     if (!currentRoomId) {
       alert("You are not connected to a nearby friend yet.");
       return;
@@ -157,7 +192,7 @@ function App() {
       return;
     }
 
-    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
 
     if (!allowedTypes.includes(file.type)) {
       alert("Only JPG, PNG, WEBP and GIF images are allowed.");
@@ -187,9 +222,32 @@ function App() {
 
       addLog("Image message sent", res.data);
     } catch (error) {
-      addLog("Image message failed", error.response?.data || error.message);
-      alert(error.response?.data?.message || "Failed to send image.");
-      console.log("Error in uploading image:", error)
+      // addLog("Image message failed", error.response?.data || error.message);
+      // alert(error.response?.data?.message || "Failed to send image.");
+      // console.log("Error in uploading image:", error)
+      const responseData = error.response?.data;
+
+      if (
+        error.response?.status === 429 ||
+        responseData?.code === "IMAGE_UPLOAD_RATE_LIMIT_REACHED"
+      ) {
+        const retryAfterSeconds = Number(responseData?.retryAfterSeconds || 60);
+
+        setImageUploadBlockedUntil(Date.now() + retryAfterSeconds * 1000);
+
+        addLog("Image upload rate limit reached", responseData);
+
+        alert(
+          responseData?.message ||
+          `Image upload limit reached. Please try again in ${retryAfterSeconds} seconds.`
+        );
+
+        return;
+      }
+
+      addLog("Image message failed", responseData || error.message);
+      alert(responseData?.message || "Failed to send image.");
+      console.log("Error in uploading image:", error);
     } finally {
       setIsImageUploading(false);
     }
@@ -1053,6 +1111,10 @@ function App() {
           isWatchingLocation={isWatchingLocation}
           logs={logs}
           matchRadiusMeters={matchRadiusMeters}
+          isImageUploadRateLimited={
+            Boolean(imageUploadBlockedUntil) && Date.now() < imageUploadBlockedUntil
+          }
+          imageUploadCooldownSeconds={imageUploadCooldownSeconds}
         />
       )}
     </div>
@@ -1569,7 +1631,9 @@ function ChatPage({
   isLocationAllowed,
   isWatchingLocation,
   logs,
-  matchRadiusMeters
+  matchRadiusMeters,
+  isImageUploadRateLimited,
+  imageUploadCooldownSeconds,
 }) {
   const [showConnectedMessage, setShowConnectedMessage] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
@@ -1720,7 +1784,7 @@ function ChatPage({
 
 
           {currentRoomId && <div className="message-input-row">
-            <button
+            {/* <button
               type="button"
               className="emoji-btn"
               disabled={!currentRoomId || isImageUploading}
@@ -1728,12 +1792,34 @@ function ChatPage({
               title="Send image"
             >
               <ImagePlus size={22} />
-            </button>
+            </button> */}
+            <span
+              className="image-upload-tooltip-wrapper"
+              title={
+                isImageUploadRateLimited
+                  ? `Image upload limit reached. Only 5 images are allowed per day.`
+                  : isImageUploading
+                    ? "Uploading image..."
+                    : !currentRoomId
+                      ? "Connect with a nearby friend to send images."
+                      : "Send image"
+              }
+            >
+              <button
+                type="button"
+                className="emoji-btn"
+                disabled={!currentRoomId || isImageUploading || isImageUploadRateLimited}
+                onClick={() => imageInputRef.current?.click()}
+              >
+                <ImagePlus size={22} />
+              </button>
+            </span>
 
             <input
               ref={imageInputRef}
               type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
+              accept="image/jpeg,image/png,image/webp"
+              disabled={isImageUploading || isImageUploadRateLimited}
               className="hidden-image-input"
               onChange={(e) => {
                 const file = e.target.files?.[0];
@@ -1865,7 +1951,7 @@ function MessageBubble({ message, mine, onImageClick }) {
 
   return (
     <div className={`message-row ${mine ? "mine" : "theirs"}`}>
-      {!mine && <div className="avatar tiny">👧</div>}
+      {/* {!mine && <div className="avatar tiny">👦</div>} */}
 
       <div className={`message-bubble ${isImageMessage ? "image-message-bubble" : ""}`}>
         {isImageMessage ? (

@@ -2739,3 +2739,12 @@ body,
     font-size: 24px;
   }
 }
+
+.image-upload-tooltip-wrapper {
+  display: inline-flex;
+}
+
+.image-upload-tooltip-wrapper .emoji-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
