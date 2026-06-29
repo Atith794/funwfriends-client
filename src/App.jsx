@@ -6,6 +6,8 @@ import "./App.css";
 import { Send, ImagePlus, Plus, Minus, X, PlusCircle, MinusCircle, Search, Menu, LogOut } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL;
+const ONLINE_USERS_POLL_INTERVAL_MS = 15000;
+const ONLINE_USERS_POLL_MAX_DURATION_MS = 2 * 60 * 1000;
 
 const GUEST_NAMES = [
   "Happy Panda",
@@ -82,12 +84,85 @@ function App() {
     return () => clearInterval(intervalId);
   }, [imageUploadBlockedUntil]);
 
+  // useEffect(() => {
+  //   let isMounted = true;
+
+  //   const fetchOnlineUsers = async () => {
+  //     try {
+  //       const res = await axios.get(`${API_URL}/stats/online-users`);
+  //       if (isMounted) {
+  //         setOnlineUsers(Number(res.data.onlineUsers || 0));
+  //       }
+  //     } catch (error) {
+  //       console.log(
+  //         "Failed to fetch online users:",
+  //         error.response?.data || error.message
+  //       );
+  //     }
+  //   };
+
+  //   fetchOnlineUsers();
+
+  //   const intervalId = setInterval(fetchOnlineUsers, 5000);
+
+  //   return () => {
+  //     isMounted = false;
+  //     clearInterval(intervalId);
+  //   };
+  // }, []);
+
+
+  // V2
+  // useEffect(() => {
+  //   if (activeScreen !== "home") {
+  //     return;
+  //   }
+
+  //   let isMounted = true;
+
+  //   const fetchOnlineUsers = async () => {
+  //     try {
+  //       const res = await axios.get(`${API_URL}/stats/online-users`);
+
+  //       if (isMounted) {
+  //         setOnlineUsers(Number(res.data.onlineUsers || 0));
+  //       }
+  //     } catch (error) {
+  //       console.log(
+  //         "Failed to fetch online users:",
+  //         error.response?.data || error.message
+  //       );
+  //     }
+  //   };
+
+  //   fetchOnlineUsers();
+
+  //   const intervalId = setInterval(fetchOnlineUsers, 15000);
+
+  //   return () => {
+  //     isMounted = false;
+  //     clearInterval(intervalId);
+  //   };
+  // }, [activeScreen]);
+
   useEffect(() => {
+    if (activeScreen !== "home") {
+      return;
+    }
+
     let isMounted = true;
+    let intervalId = null;
+    let stopTimeoutId = null;
+    let pollingExpired = false;
 
     const fetchOnlineUsers = async () => {
+      if (!isMounted || pollingExpired || document.hidden) {
+        return;
+      }
+
       try {
         const res = await axios.get(`${API_URL}/stats/online-users`);
+
         if (isMounted) {
           setOnlineUsers(Number(res.data.onlineUsers || 0));
         }
@@ -99,15 +174,57 @@ function App() {
       }
     };
 
-    fetchOnlineUsers();
+    const startPolling = () => {
+      if (pollingExpired || intervalId || document.hidden) {
+        return;
+      }
 
-    const intervalId = setInterval(fetchOnlineUsers, 5000);
+      fetchOnlineUsers();
+
+      intervalId = setInterval(fetchOnlineUsers, ONLINE_USERS_POLL_INTERVAL_MS);
+    };
+
+    const stopPollingInterval = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    const stopPollingCompletely = () => {
+      pollingExpired = true;
+      stopPollingInterval();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stopPollingInterval();
+        return;
+      }
+
+      startPolling();
+    };
+
+    startPolling();
+
+    stopTimeoutId = setTimeout(() => {
+      stopPollingCompletely();
+    }, ONLINE_USERS_POLL_MAX_DURATION_MS);
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       isMounted = false;
-      clearInterval(intervalId);
+
+      stopPollingInterval();
+
+      if (stopTimeoutId) {
+        clearTimeout(stopTimeoutId);
+      }
+
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [activeScreen]);
 
   useEffect(() => {
     if (!navigator.permissions?.query) return;
@@ -1311,6 +1428,7 @@ function LandingPage({
   isMaintenance,
 }) {
   const [showTerms, setShowTerms] = useState(false);
+  const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
 
   function getOnlineUsersLabel(onlineUsers) {
     const count = Number(onlineUsers || 0);
@@ -1425,31 +1543,57 @@ function LandingPage({
       </section>
 
       <footer className="landing-footer">
-        <button
-          type="button"
-          className="footer-terms-btn"
-          onClick={() => setShowTerms(true)}
-        >
-          <span className="footer-terms-icon" aria-hidden="true">
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <path d="M14 2v6h6" />
-              <path d="M8 13h8" />
-              <path d="M8 17h6" />
-            </svg>
-          </span>
-          Terms and conditions
-        </button>
+        <div>
+          <button
+            type="button"
+            className="footer-terms-btn"
+            onClick={() => setShowTerms(true)}
+          >
+            <span className="footer-terms-icon" aria-hidden="true">
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <path d="M14 2v6h6" />
+                <path d="M8 13h8" />
+                <path d="M8 17h6" />
+              </svg>
+            </span>
+            Terms and conditions
+          </button>
 
+          <button
+            type="button"
+            className="footer-terms-btn"
+            onClick={() => setShowPrivacyPolicy(true)}
+          >
+            <span className="footer-terms-icon" aria-hidden="true">
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <path d="M14 2v6h6" />
+                <path d="M8 13h8" />
+                <path d="M8 17h6" />
+              </svg>
+            </span>
+            Privacy Policy
+          </button>
+        </div>
         <p className="footer-copyright">© 2026 All rights reserved.</p>
 
         <div className="footer-powered-wrapper">
@@ -1593,6 +1737,77 @@ function LandingPage({
             <p>
               By using this app, you confirm that you have read, understood,
               and agreed to these Terms and Conditions.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* showPrivacyPolicy */}
+      {showPrivacyPolicy && (
+        <div className="terms-modal-overlay" onClick={() => setShowPrivacyPolicy(false)}>
+          <div className="terms-modal" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="terms-close-btn"
+              onClick={() => setShowPrivacyPolicy(false)}
+            >
+              ×
+            </button>
+
+            <h2>Privacy Policy</h2>
+
+            <p>
+              By using this app, you agree to this Privacy Policy.
+            </p>
+
+            <h2>1. Information We Collect</h2>
+
+            <p>
+              This app may collect basic information required to provide the service, such as your display name, chat activity, device/network details, and approximate location permission if you allow it.
+            </p>
+
+            <h2>2. Why We Use This Information</h2>
+
+            <p>
+              We use this information only to help users connect and chat with nearby users, improve app functionality, maintain safety, and prevent misuse of the app.
+            </p>
+
+            <h2>3. Sensitive Information</h2>
+
+            <p>
+              The app does not ask users to share sensitive personal information such as phone numbers, addresses, passwords, OTPs, financial details, identity documents, or private personal details.
+
+              If a user voluntarily shares such information with another user, they do so at their own risk.
+            </p>
+
+            <h2>4. Chat and User Content</h2>
+
+            <p>
+              Users are responsible for the messages, images, or content they share inside the app. The app is not responsible for information leaks, screenshots, misuse, or damages caused by content voluntarily shared by users.
+            </p>
+
+            <h2>5. Location Permission</h2>
+
+            <p>
+              The app may use location access only to provide nearby matching features. Users can deny or disable location permission from their browser or device settings.
+            </p>
+
+            <h2>6. Data Safety</h2>
+
+            <p>
+              We try to take reasonable steps to protect user data, but we cannot guarantee complete security of information shared online.
+            </p>
+
+            <h2>7. Data Sharing</h2>
+
+            <p>
+              We do not sell users personal information. However, we may share information if required by law, safety concerns, or to prevent misuse of the app.
+            </p>
+
+            <h2>8. User Consent</h2>
+
+            <p>
+              By using this app, you confirm that you understand and agree to this Privacy Policy.
             </p>
           </div>
         </div>

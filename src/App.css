@@ -1478,6 +1478,7 @@ button:disabled {
 
 .footer-terms-btn {
   justify-self: start;
+  width: 220px;
   min-height: 62px;
   padding: 0 28px;
   border: 1px solid rgba(226, 232, 240, 0.45);
@@ -1498,6 +1499,7 @@ button:disabled {
     transform 0.2s ease,
     border-color 0.2s ease,
     background 0.2s ease;
+    margin-bottom: 5%;
 }
 
 .footer-terms-btn:hover {
